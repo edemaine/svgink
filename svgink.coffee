@@ -142,16 +142,23 @@ class SVGProcessor
           return reject new InkscapeError "Inkscape shell does not support filenames with semicolons or leading/trailing spaces: #{filename}"
       @queue.push {input, output, resolve, reject}
       @update()
+  close: ->
+    ## Close all Inkscape processes once all pending jobs are complete.
+    @closing = true
+    @update()
   update: ->
-    ## Potentially push jobs from queue to Inkscape processes.
-    return unless @queue.length
+    ## Potentially push jobs from queue or closing to Inkscape processes.
+    return unless @queue.length or @closing
     ## Filter out any Inkscape processes that died, e.g. from idle timeout.
     @inkscapes = (inkscape for inkscape in @inkscapes when not inkscape.dead)
     ## Give jobs to any ready Inkscape processes.
     for inkscape in @inkscapes
       if inkscape.ready
-        @run inkscape, @queue.shift()
-        return unless @queue.length
+        if @queue.length
+          @run inkscape, @queue.shift()
+          return unless @queue.length or @closing
+        else if @closing
+          inkscape.close()
     ## If we still have jobs, start more Inkscape processes to run them.
     while @queue.length and @inkscapes.length < @settings.jobs
       job = @queue.shift()
@@ -266,6 +273,7 @@ main = (args = process.argv[2..]) ->
             .catch (error) ->
               console.log "! #{input} -> #{output} FAILED"
               console.log error
+  processor.close()
   if not formats.length
     console.log '! Not enough formats'
     help()
