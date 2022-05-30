@@ -32,5 +32,8 @@
     "email": "edemaine@mit.edu",
     "url": "https://erikdemaine.org/"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "coffeescript": "^2.7.0"
+  }
 }
