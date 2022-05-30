@@ -63,7 +63,7 @@ class Inkscape
             if @job?.startsWith firstLine.replace /\r[^]*$/, ''
               ''
             else
-              firstLine
+              match
           stderr = @stderr
           @stdout = @stderr = ''
           @resolve? {stdout, stderr}
