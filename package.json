@@ -1,0 +1,36 @@
+{
+  "name": "svgink",
+  "version": "0.0.0",
+  "description": "Efficiently convert SVG files to PDF and/or PNG via Inkscape",
+  "keywords": [
+    "svg",
+    "pdf",
+    "png",
+    "inkscape",
+    "cli",
+    "converter",
+    "export"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/edemaine/svgink.git"
+  },
+  "bugs": {
+    "url": "https://github.com/edemaine/svgink/issues"
+  },
+  "homepage": "https://github.com/edemaine/svgink",
+  "main": "svgink.js",
+  "bin": {
+    "svgink": "svgink.js"
+  },
+  "preferGlobal": true,
+  "scripts": {
+    "prepare": "coffee --no-header --bare -c svgink.coffee"
+  },
+  "author": {
+    "name": "Erik Demaine",
+    "email": "edemaine@mit.edu",
+    "url": "https://erikdemaine.org/"
+  },
+  "license": "MIT"
+}
