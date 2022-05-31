@@ -18,6 +18,9 @@ defaultSettings =
   ## If an Inkscape process sits idle for this many milliseconds, close it.
   ## Default = null which means infinity.
   idle: null
+  ## If an Inkscape fails to start shell for this many milliseconds, fail.
+  ## Default = 5 seconds.  Set to null to disable.
+  startTimeout: 5000
   ## If an Inkscape fails to close for this many milliseconds, kill it.
   ## Default = 1 second.  Set to null to disable.
   quitTimeout: 1000
@@ -35,11 +38,11 @@ class InkscapeError extends Error
     @name = 'InkscapeError'
 
 class Inkscape
-  constructor: (@settings = defaultSettings, @initialUnref) ->
+  constructor: (@settings = defaultSettings) ->
+  open: (initialUnref) ->
+    ## Start Inkscape process.  Returns a Promise.
     ## `initialUnref` specifies whether to unref the Inkscape process
-    ## before it even initializes; use for secondary Inkscape processes.
-  open: ->
-    ## Returns a Promise.
+    ## before it finishes starting; set true for secondary Inkscape processes.
     new Promise (@resolve, @reject) =>
       @stdout = @stderr = ''
       @dead = @ready = false
@@ -49,7 +52,12 @@ class Inkscape
       for handle in [@process.stdin, @process.stdout, @process.stderr]
         handle.unref()
       ## Don't wait for a new Inkscape to start, unless requested.
-      @process.unref() if @initialUnref
+      @process.unref() if initialUnref
+      ## Check for failure to start.
+      @timeout = setTimeout =>
+        @reject new InkscapeError "'#{@settings.inkscape} --shell' produced no '> ' prompt after #{@settings.startTimeout / 1000} seconds"
+      , @settings.startTimeout if @settings.startTimeout
+      @timeout.unref()
       @process.stderr.on 'data', (buf) =>
         @stderr += buf
       @process.stdout.on 'data', (buf) =>
@@ -58,8 +66,9 @@ class Inkscape
           #console.log (new Date), 'ready' unless @job?
           ## Inkscape just started up, or finished a job.  Allow Node to exit.
           ## In the first case, don't call unref() a second time.
-          @process.unref() if @job? or not @initialUnref
+          @process.unref() if @job? or not initialUnref
           @ready = true
+          clearTimeout @timeout if @timeout?
           if @settings.idle?
             @timeout = setTimeout (=> @close()), @settings.idle
             @timeout.unref()
@@ -85,9 +94,18 @@ class Inkscape
       @process.on 'exit', (status, signal) =>
         return if @dead  # ignore exit event after error event
         @closed()
-        if status or signal
+        if status or signal or not @job
           if @reject?
-            @reject {status, signal}
+            @reject {status, signal,
+              message:
+                "'#{@settings.inkscape} --shell' exited " +
+                if status
+                  "with status #{status}"
+                else if signal
+                  "with signal #{signal}"
+                else
+                  "without status or signal before '> ' prompt"
+            }
             @resolve = @reject = null
           else
             throw new InkscapeError "Uncaught Inkscape crash: #{status}, #{signal}"
@@ -183,13 +201,16 @@ class SVGProcessor
     ## quickly with the first spawned Inkscape.
     if not @spawning and @queue.length and @inkscapes.length < @settings.jobs
       @spawning = true
-      @inkscapes.push inkscape = new Inkscape @settings, @inkscapes.length
-      inkscape.open()
+      @inkscapes.push inkscape = new Inkscape @settings
+      inkscape.open @inkscapes.length > 1
       .then =>
         @spawning = false
         @update()
       .catch (error) =>
-        throw new InkscapeError "Failed to spawn Inkscape: #{error.message}"
+        throw new InkscapeError "Failed to spawn Inkscape: #{error.message}" +
+          if error.code == 'ENOENT'
+            ' (check PATH environment variable?)'
+          else ''
     undefined
   run: (inkscape, job) ->
     inkscape.run job
@@ -255,6 +276,9 @@ main = (args = process.argv[2..]) ->
     switch arg
       when '-h', '--help'
         help()
+      when '-i', '--inkscape'
+        skip = 1
+        settings.inkscape = args[i+1]
       when '-o', '--output'
         skip = 1
         outputDir = args[i+1]
