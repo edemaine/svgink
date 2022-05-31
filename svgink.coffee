@@ -95,20 +95,19 @@ class Inkscape
         return if @dead  # ignore exit event after error event
         @closed()
         if status or signal or not @job
+          message =
+            "'#{@settings.inkscape} --shell' exited " +
+            if status
+              "with status #{status}"
+            else if signal
+              "with signal #{signal}"
+            else
+              "without status or signal before '> ' prompt"
           if @reject?
-            @reject {status, signal,
-              message:
-                "'#{@settings.inkscape} --shell' exited " +
-                if status
-                  "with status #{status}"
-                else if signal
-                  "with signal #{signal}"
-                else
-                  "without status or signal before '> ' prompt"
-            }
+            @reject {status, signal, message}
             @resolve = @reject = null
           else
-            throw new InkscapeError "Uncaught Inkscape crash: #{status}, #{signal}"
+            throw new InkscapeError "Uncaught Inkscape crash: #{message}"
         else
           @resolve?(
             stdout: @stdout
