@@ -42,7 +42,7 @@ class Inkscape
     ## Returns a Promise.
     new Promise (@resolve, @reject) =>
       @stdout = @stderr = ''
-      @dead = @ready = @started = false
+      @dead = @ready = false
       #console.log (new Date), 'start'
       @process = child_process.spawn @settings.inkscape, ['--shell']
       ## Node can close independent of pipes; rely on @process.ref/unref
@@ -55,11 +55,11 @@ class Inkscape
       @process.stdout.on 'data', (buf) =>
         @stdout += buf
         if @stdout == '> ' or @stdout.endsWith '\n> '
-          #console.log (new Date), 'ready' unless @started
+          #console.log (new Date), 'ready' unless @job?
           ## Inkscape just started up, or finished a job.  Allow Node to exit.
           ## In the first case, don't call unref() a second time.
-          @process.unref() if @started or not @initialUnref
-          @ready = @started = true
+          @process.unref() if @job? or not @initialUnref
+          @ready = true
           if @settings.idle?
             @timeout = setTimeout (=> @close()), @settings.idle
             @timeout.unref()
@@ -153,13 +153,20 @@ class SVGProcessor
       @update()
   close: ->
     ## Close all Inkscape processes once all pending jobs are complete.
-    @closing = true
-    @update()
+    ## Returns a promise.
+    new Promise (@closing) =>
+      @update()
   update: ->
     ## Potentially push jobs from queue or closing to Inkscape processes.
     return unless @queue.length or @closing
     ## Filter out any Inkscape processes that died, e.g. from idle timeout.
     @inkscapes = (inkscape for inkscape in @inkscapes when not inkscape.dead)
+    ## Check for completed closing.
+    if @closing and not @queue.length and
+       @inkscapes.every (inkscape) -> not inkscape.job?
+      ## Schedule close() promise to resolve after job promise resolves.
+      setTimeout (=> @closing()), 0
+      return
     ## Give jobs to any ready Inkscape processes.
     for inkscape in @inkscapes
       if inkscape.ready
@@ -183,6 +190,7 @@ class SVGProcessor
         @update()
       .catch (error) =>
         throw new InkscapeError "Failed to spawn Inkscape: #{error.message}"
+    undefined
   run: (inkscape, job) ->
     inkscape.run job
     .then (data) =>
@@ -232,6 +240,7 @@ Optional arguments:
 """
 
 main = (args = process.argv[2..]) ->
+  start = new Date
   path = require 'path'
   settings = {...defaultSettings}
   processor = new SVGProcessor settings
@@ -288,13 +297,15 @@ main = (args = process.argv[2..]) ->
             .catch (error) ->
               console.log "! #{input} -> #{output} FAILED"
               console.log error
-  processor.close()
+  await processor.close()
   if not formats.length
     console.log '! Not enough formats'
     help()
   else if not files
     console.log '! Not enough filename arguments'
     help()
+  else
+    console.log "> Converted #{files} SVG files into #{files * formats.length} files in #{Math.round((new Date) - start) / 1000} seconds"
 
 module.exports = {
   defaultSettings
