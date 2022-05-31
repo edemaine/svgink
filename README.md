@@ -58,6 +58,28 @@ npm install -g svgink
 
 This should install an `svgink` command-line tool on your path.
 
+## Usage
+
+Run `svgink` to see the supported command-line options:
+
+```
+Usage: svgink (...options and filenames...)
+
+Filenames should specify SVG files.
+Optional arguments:
+  -h / --help           Show this help message and exit.
+  -o DIR / --output DIR Write all output files to directory DIR
+  --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
+  --oP DIR / --output-png DIR   Write all .png files to directory DIR
+  -p / --pdf            Convert output SVG files to PDF via Inkscape
+  -P / --png            Convert output SVG files to PNG via Inkscape
+  --no-sanitize         Don't sanitize PDF output by blanking out /CreationDate
+  -j N / --jobs N       Run up to N Inkscape jobs in parallel
+```
+
+These options are intentionally similar to
+[SVG Tiler](https://github.com/edemaine/svgtiler).
+
 ## Limitations
 
 Feel free to open a GitHub Issue if any of the following limitations
