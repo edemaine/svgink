@@ -24,7 +24,7 @@ defaultSettings =
   ## If an Inkscape fails to close for this many milliseconds, kill it.
   ## Default = 1 second.  Set to null to disable.
   quitTimeout: 1000
-  ## Sanitize PDF output by blanking out /CreationDate.
+  ## Whether to sanitize PDF output by blanking out /CreationDate.
   sanitize: true
   ## Buffer size for sanitization.
   bufferSize: 16*1024

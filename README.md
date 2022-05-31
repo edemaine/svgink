@@ -68,7 +68,7 @@ npm install -g svgink
 
 This should install an `svgink` command-line tool on your path.
 
-## Usage
+## Command-Line Interface
 
 Run `svgink` to see the supported command-line options:
 
@@ -89,6 +89,110 @@ Optional arguments:
 
 These options are intentionally similar to
 [SVG Tiler](https://github.com/edemaine/svgtiler).
+
+## API
+
+You can also use `svgink` from your Node programs.  For example,
+[SVG Tiler](https://github.com/edemaine/svgtiler) uses `svgink` to convert
+generated SVG files to other formats.
+
+First, install `svgink` as a dependency in your project:
+
+```bash
+npm install svgink
+```
+
+Then you can `require('svgink')` or `import ... from 'svgink'`.
+
+Here is a simple example of converting two files:
+
+```js
+import {SVGProcessor} from 'svgink';
+const processor = new SVGProcessor();
+processor.convert('input1.svg', 'output1.pdf')
+.then(() => console.log('converted first file'));
+processor.convert('input2.svg', 'output2.pdf');
+.then(() => console.log('converted second file'));
+await processor.close();
+console.log('finished all conversions');
+```
+
+Alternatively, you can access the command-line interface like so:
+
+```js
+import {SVGProcessor} from 'svgink';
+main(['-p', '-j', '4', '-o', 'pdf', 'input1.svg', 'input2.svg'])
+.then(() => console.log('finished all conversions'));
+```
+
+The API provides two classes:
+
+1. `SVGProcessor` handles spawning one or more Inkscape processes.
+   * `convert(input, output)` converts one filename to another.
+     The input file should be SVG.
+     The output format is determined from the file extension.
+     It returns a promise which resolves when that conversion is done
+     (including sanitization).
+   * `sanitize(output)` optionally sanitizes the given output filename.
+     You could override this method to support custom sanitization behavior.
+     It normally returns a promise.
+   * `close()` shuts down Inkscape processes once all conversion jobs
+     added so far are done.  (Do not add jobs after calling `close()`.)
+     It returns a promise which resolves when all jobs are complete
+     (though Inkscape processes may still be shutting down).
+2. `Inkscape` handles interaction with a single Inkscape process
+   (via its shell interface).
+   * `open(initialUnref)` starts the Inkscape process.
+     It returns a promise which resolves when Inkscape is ready for a job
+     (has output a `> ` prompt).
+     `initialUnref` specifies whether to
+     [unref](https://nodejs.org/api/child_process.html#subprocessunref)
+     the Inkscape process before it finishes starting;
+     set true for secondary Inkscape processes.
+   * `run(job)` sends a given job to the Inkscape process,
+     and returns a promise which resolves when Inkscape finishes the job.
+     This can be called only when Inkscape is ready
+     (after the promise returned by `open()` or the last call to `run()`
+     has resolved).
+   * `ready` is a Boolean variable indicating whether Inkscape is ready
+     for a new job via `run()`.
+   * `close()` attempts to gently close the Inkscape process
+     via the `quit` command.  If this times out,
+     it kills the process via a signal.
+
+The constructors for `SVGProcessor` and `Inkscape` take a single optional
+argument, which is a settings object.  It can have the following properties:
+
+* `inkscape`: Path to inkscape.  Default searches PATH for `inkscape`.
+* `jobs`: Maximum number of Inkscapes to run in parallel.
+  Default = half the number of logical CPUs
+  (= number of physical CPU cores assuming hyperthreading).
+* `idle`: If an Inkscape process sits idle for this many milliseconds,
+  close it.  Default = `null` which means infinity.
+* `startTimeout`: If an Inkscape fails to start shell for this many
+  milliseconds, fail.  Default = 5 seconds.  Set to `null` to disable.
+* `quitTimeout`: If an Inkscape fails to close for this many milliseconds,
+  kill it.  Default = 1 second.  Set to `null` to disable.
+* `sanitize`: Whether to sanitize PDF output by blanking out /CreationDate.
+  Default = `true`.
+* `bufferSize`: Buffer size for sanitization.  Default = 16KB.
+
+The default settings are given by the `defaultSettings` export.
+If you want to override just some settings,
+you should duplicate and modify that object.  For example:
+
+```js
+import {SVGProcessor, defaultSettings} from 'svgink';
+const processor = new SVGProcessor({...defaultSettings, jobs: 4});
+```
+
+Alternatively, you can modify `defaultSettings` to affect all future operations:
+
+```js
+import {SVGProcessor, defaultSettings} from 'svgink';
+defaultSettings.jobs = 4;
+const processor = new SVGProcessor();
+```
 
 ## Limitations
 
