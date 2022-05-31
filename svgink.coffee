@@ -25,8 +25,8 @@ defaultSettings =
     catch
       1
   ## If an Inkscape process sits idle for this many milliseconds, close it.
-  ## Default = null which means infinity.
-  idle: null
+  ## Default = 1 minute.  Set to null to disable.
+  idle: 60000
   ## If an Inkscape fails to start shell for this many milliseconds, fail.
   ## Default = 5 seconds.  Set to null to disable.
   startTimeout: 5000
@@ -54,7 +54,7 @@ class Inkscape
     ## before it finishes starting; set true for secondary Inkscape processes.
     new Promise (@resolve, @reject) =>
       @stdout = @stderr = ''
-      @dead = @ready = false
+      @dead = @ready = @started = false
       #console.log (new Date), 'start'
       @process = child_process.spawn @settings.inkscape, ['--shell']
       ## Node can close independent of pipes; rely on @process.ref/unref
@@ -72,11 +72,11 @@ class Inkscape
       @process.stdout.on 'data', (buf) =>
         @stdout += buf
         if @stdout == '> ' or @stdout.endsWith '\n> '
-          #console.log (new Date), 'ready' unless @job?
+          #console.log (new Date), 'ready' unless @started
           ## Inkscape just started up, or finished a job.  Allow Node to exit.
           ## In the first case, don't call unref() a second time.
           @process.unref() if @job? or not initialUnref
-          @ready = true
+          @ready = @started = true
           clearTimeout @timeout if @timeout?
           if @settings.idle?
             @timeout = setTimeout (=> @close()), @settings.idle
@@ -104,7 +104,7 @@ class Inkscape
       @process.on 'exit', (status, signal) =>
         return if @dead  # ignore exit event after error event
         @closed()
-        if status or signal or not @job
+        if status or signal or not @started
           message =
             "'#{@settings.inkscape} --shell' exited " +
             if status
@@ -114,7 +114,11 @@ class Inkscape
             else
               "without status or signal before '> ' prompt"
           if @reject?
-            @reject {...@job, status, signal, message}
+            error = new InkscapeError message
+            error[key] = value for key, value of @job if @job?
+            error.status = status
+            error.signal = signal
+            @reject error
             @resolve = @reject = @job = @cmd = null
           else
             throw new InkscapeError "Uncaught Inkscape crash: #{message}"
