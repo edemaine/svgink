@@ -4,6 +4,7 @@
 metadata = require './package.json'
 child_process = require 'child_process'
 fs = require 'fs/promises'
+fsSync = require 'fs'
 path = require 'path'
 
 defaultSettings =
@@ -185,9 +186,17 @@ class SVGProcessor
     else
       parsed.ext += format
     if @settings.outputDirExt[format]?
-      parsed.dir = @settings.outputDirExt[format]
+      dir = @settings.outputDirExt[format]
     else if @settings.outputDir?
-      parsed.dir = @settings.outputDir
+      dir = @settings.outputDir
+    if dir?
+      ## Try to make output directory, synchronously to avoid multiple
+      ## async threads trying to make the same directory at once.
+      try
+        fsSync.mkdirSync dir, recursive: true
+      catch error
+        console.log "! Failed to make directory '#{dir}': #{error.message}"
+      parsed.dir = dir
     output = path.format parsed
     promise = @convert input, output
     promise.output = output
