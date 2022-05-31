@@ -47,6 +47,16 @@ and on Linux, starting Inkscape processes is fast enough to not be a big deal.
 This also prevents `svgink` from starting more Inkscape processes than
 necessary, in case all jobs complete faster than the startup process.)
 
+## Sanitization
+
+`svgink` also tries to make version control easier with compiled PDF outputs
+(which are useful to check in to avoid requiring Inkscape to build).
+Normally, Inkscape includes a `/CreationDate` field in the generated PDF,
+so each time you build the PDF files, the files change.
+By default, `svgink` strips this date out, so the generated PDF files
+should be identical (assuming matching Inkscape versions).
+You can turn off this behavior via the `--no-sanitize` command-line option.
+
 ## Installation
 
 After [installing Node](https://nodejs.org/en/download/),
