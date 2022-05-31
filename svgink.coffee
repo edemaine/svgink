@@ -224,7 +224,7 @@ class SVGProcessor
     inkscape.run job
     .then (data) =>
       @update()
-      @sanitize job.output if job.output?
+      await @sanitize job.output if job.output?
       data
     .then (data) =>
       job.resolve data
