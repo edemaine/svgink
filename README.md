@@ -131,13 +131,16 @@ The API provides two classes:
    * `convert(input, output)` queues converting one filename to another,
      following by sanitizing the output.  The input file should be SVG.
      The output format is determined from the file extension.
-     It returns a promise which resolves when the conversion and sanitization
-     are complete.
+     It returns a promise which resolves to a `{stdout, stderr}` object
+     when the conversion and sanitization are complete.
+     These give the string contents from Inkscape's stdout and stderr
+     for this job, which you should print to display warnings and/or errors.
    * `run(job)` queues a given job.  A job can be a string to send to
      Inkscape directly, or an object of the form
      `{input: 'input.svg', output: `output.pdf'}`,
      but scheduling a conversion in this way will skip sanitization.
-     Returns a promise which resolves when the job is complete.
+     Returns a promise which resolves to a `{stdout, stderr}` object
+     when the job is complete.
    * `sanitize(output)` optionally sanitizes the given output filename.
      You could override this method to support custom sanitization behavior.
      It normally returns a promise.
@@ -155,7 +158,8 @@ The API provides two classes:
      the Inkscape process before it finishes starting;
      set true for secondary Inkscape processes.
    * `run(job)` sends a given job to the Inkscape process,
-     and returns a promise which resolves when Inkscape finishes the job.
+     and returns a promise which resolves to a `{stdout, stderr}` object
+     when Inkscape finishes the job.
      This method can be called only when Inkscape is ready
      (after the promise returned by `open()` or the last call to `run()`
      has resolved).
