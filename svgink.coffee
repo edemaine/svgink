@@ -140,6 +140,7 @@ class Inkscape
     @ready = false
     @process.ref()
     clearTimeout @timeout if @timeout?
+    job = job.job if job?.job?
     if typeof job == 'string'
       @job = job.replace /\n+$/, ''
     else if job?.input? and job.output?
@@ -161,13 +162,21 @@ class SVGProcessor
     @queue = []
     @spawning = false
   convert: (input, output) ->
-    ## Convert input filename to output filename.  Returns a Promise.
+    ## Convert input filename to output filename, and then sanitize.
+    ## Returns a Promise.
     new Promise (resolve, reject) =>
       for filename in [input, output]
         if invalidFilename filename
           return reject new InkscapeError "Inkscape shell does not support filenames with semicolons or leading/trailing spaces: #{filename}"
       @queue.push {input, output, resolve, reject}
       @update()
+  run: (job) ->
+    ## Queue job for Inkscape to run.  Returns a Promise.
+    ## Job can be a string to send to the shell, or an object with
+    ## `input` and `output` properties, for conversion (without sanitization).
+    job = {job} if typeof job == 'string'
+    new Promise (resolve, reject) =>
+      @queue.push {...job, resolve, reject}
   close: ->
     ## Close all Inkscape processes once all pending jobs are complete.
     ## Returns a promise.
@@ -188,7 +197,7 @@ class SVGProcessor
     for inkscape in @inkscapes
       if inkscape.ready
         if @queue.length
-          @run inkscape, @queue.shift()
+          @runNow inkscape, @queue.shift()
           return unless @queue.length or @closing
         else if @closing
           inkscape.close()
@@ -211,7 +220,7 @@ class SVGProcessor
             ' (check PATH environment variable?)'
           else ''
     undefined
-  run: (inkscape, job) ->
+  runNow: (inkscape, job) ->
     inkscape.run job
     .then (data) =>
       @update()

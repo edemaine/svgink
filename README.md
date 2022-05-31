@@ -128,11 +128,16 @@ main(['-p', '-j', '4', '-o', 'pdf', 'input1.svg', 'input2.svg'])
 The API provides two classes:
 
 1. `SVGProcessor` handles spawning one or more Inkscape processes.
-   * `convert(input, output)` converts one filename to another.
-     The input file should be SVG.
+   * `convert(input, output)` queues converting one filename to another,
+     following by sanitizing the output.  The input file should be SVG.
      The output format is determined from the file extension.
-     It returns a promise which resolves when that conversion is done
-     (including sanitization).
+     It returns a promise which resolves when the conversion and sanitization
+     are complete.
+   * `run(job)` queues a given job.  A job can be a string to send to
+     Inkscape directly, or an object of the form
+     `{input: 'input.svg', output: `output.pdf'}`,
+     but scheduling a conversion in this way will skip sanitization.
+     Returns a promise which resolves when the job is complete.
    * `sanitize(output)` optionally sanitizes the given output filename.
      You could override this method to support custom sanitization behavior.
      It normally returns a promise.
@@ -151,7 +156,7 @@ The API provides two classes:
      set true for secondary Inkscape processes.
    * `run(job)` sends a given job to the Inkscape process,
      and returns a promise which resolves when Inkscape finishes the job.
-     This can be called only when Inkscape is ready
+     This method can be called only when Inkscape is ready
      (after the promise returned by `open()` or the last call to `run()`
      has resolved).
    * `ready` is a Boolean variable indicating whether Inkscape is ready
