@@ -337,6 +337,7 @@ module.exports = {
   InkscapeError
   Inkscape
   SVGProcessor
+  main
 }
 
 main() if module? and require?.main == module
