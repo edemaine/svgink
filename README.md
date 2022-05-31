@@ -28,14 +28,23 @@ svgink --pdf -o pdf filename1.svg filename2.svg
 
 A major advantage of `svgink` is that it quickly converts many SVG files.
 
-First, `svgink` uses Inkscape's
+First, `svgink` skips converting SVG files that are older than the
+corresponding PDF/PNG file (similar to `make`).
+You can override this behavior via the `--force` command-line option,
+which forces all conversions to be done.
+This is useful if you update Inkscape, update `svgink`, or
+a conversion failed and somehow generated a bad file.
+(Alternatively, you can `touch` the relevant SVG files
+or `rm` the relevant PDF/PNG files.)
+
+Second, `svgink` uses Inkscape's
 [shell protocol](https://wiki.inkscape.org/wiki/Using_the_Command_Line#Shell_mode)
 to run a sequence of conversions with a single Inkscape process.
 This is much faster than running Inkscape individually on each SVG file
 (especially on Windows, where spawning a process takes seconds),
-which is what might happen most naturally with a Makefile.
+which is what might happen most naturally with conversions driven by `make`.
 
-Second, `svgink` runs multiple Inkscape processes to exploit multicore CPUs.
+Third, `svgink` runs multiple Inkscape processes to exploit multicore CPUs.
 By default, it runs half as many Inkscape processes as there are logical cores
 on your machine (to account for typical hyperthreading which presents *n*
 physical cores as 2&nbsp;*n* logical cores).
@@ -78,6 +87,7 @@ Usage: svgink (...options and filenames...)
 Filenames should specify SVG files.
 Optional arguments:
   -h / --help           Show this help message and exit.
+  -f / --force          Force conversion even if output newer than SVG input
   -o DIR / --output DIR Write all output files to directory DIR
   --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
   --oP DIR / --output-png DIR   Write all .png files to directory DIR
@@ -172,6 +182,7 @@ The API provides two classes:
 The constructors for `SVGProcessor` and `Inkscape` take a single optional
 argument, which is a settings object.  It can have the following properties:
 
+* `force`: Whether to force conversion, even if SVG file is older than target.
 * `inkscape`: Path to inkscape.  Default searches PATH for `inkscape`.
 * `jobs`: Maximum number of Inkscapes to run in parallel.
   Default = half the number of logical CPUs

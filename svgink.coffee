@@ -6,6 +6,8 @@ child_process = require 'child_process'
 fs = require 'fs/promises'
 
 defaultSettings =
+  ## Whether to force conversion, even if SVG file is older than target.
+  force: false
   ## Path to inkscape.  Default searches PATH.
   inkscape: 'inkscape'
   ## Maximum number of Inkscapes to run in parallel.
@@ -161,19 +163,34 @@ class SVGProcessor
     @inkscapes = []
     @queue = []
     @spawning = false
+    @jobs = 0
   convert: (input, output) ->
-    ## Convert input filename to output filename, and then sanitize.
-    ## Returns a Promise.
+    ## Convert input filename to output filename, and then sanitize,
+    ## unless output is newer than input or forced.  Returns a Promise.
+    @jobs++
     new Promise (resolve, reject) =>
       for filename in [input, output]
         if invalidFilename filename
+          jobs--
           return reject new InkscapeError "Inkscape shell does not support filenames with semicolons or leading/trailing spaces: #{filename}"
-      @queue.push {input, output, resolve, reject}
-      @update()
+      ## Compare input and output modification times, unless forced.
+      unless @settings.force
+        try
+          outputStat = await fs.stat output
+          inputStat = await fs.stat input
+      unless inputStat? and outputStat? and inputStat.mtime < outputStat.mtime
+        @queue.push {input, output, resolve, reject}
+        @update()
+      else
+        @jobs--
+        resolve {skip: true}
+        @update() if @closing  # resolve close() in case last job is skipped
+      undefined
   run: (job) ->
     ## Queue job for Inkscape to run.  Returns a Promise.
     ## Job can be a string to send to the shell, or an object with
     ## `input` and `output` properties, for conversion (without sanitization).
+    @jobs++
     job = {job} if typeof job == 'string'
     new Promise (resolve, reject) =>
       @queue.push {...job, resolve, reject}
@@ -188,8 +205,9 @@ class SVGProcessor
     ## Filter out any Inkscape processes that died, e.g. from idle timeout.
     @inkscapes = (inkscape for inkscape in @inkscapes when not inkscape.dead)
     ## Check for completed closing.
-    if @closing and not @queue.length and
-       @inkscapes.every (inkscape) -> not inkscape.job?
+    if @closing and @jobs <= 0
+      #and not @queue.length and
+      #@inkscapes.every (inkscape) -> not inkscape.job?
       ## Schedule close() promise to resolve after job promise resolves.
       setTimeout (=> @closing()), 0
       return
@@ -228,6 +246,8 @@ class SVGProcessor
       data
     .then (data) =>
       job.resolve data
+      @jobs--
+      @update()
     .catch (error) =>
       job.reject error
   sanitize: (output) ->
@@ -257,6 +277,7 @@ Documentation: https://github.com/edemaine/svgink
 Filenames should specify SVG files.
 Optional arguments:
   -h / --help           Show this help message and exit.
+  -f / --force          Force conversion even if output newer than SVG input
   -o DIR / --output DIR Write all output files to directory DIR
   --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
   --oP DIR / --output-png DIR   Write all .png files to directory DIR
@@ -274,7 +295,11 @@ main = (args = process.argv[2..]) ->
   formats = []
   outputDir = null
   outputDirExt = {}
-  files = skip = 0
+  files =
+    input: 0
+    output: 0
+    skip: 0
+  skip = 0
   for arg, i in args
     if skip
       skip--
@@ -282,6 +307,8 @@ main = (args = process.argv[2..]) ->
     switch arg
       when '-h', '--help'
         help()
+      when '-f', '--force'
+        settings.force = true
       when '-i', '--inkscape'
         skip = 1
         settings.inkscape = args[i+1]
@@ -308,9 +335,10 @@ main = (args = process.argv[2..]) ->
         else
           console.warn "Invalid argument to --jobs: #{args[i+1]}"
       else
-        files++
+        files.input++
         input = arg
         for format in formats
+          files.output++
           output = path.parse input
           delete output.base
           if output.ext != ".#{format}"
@@ -325,9 +353,13 @@ main = (args = process.argv[2..]) ->
           do (input, output) ->
             processor.convert input, output
             .then (data) ->
-              console.log "* #{input} -> #{output}"
-              console.log data.stdout if data.stdout
-              console.log data.stderr if data.stderr
+              if data.skip
+                files.skip++
+                console.log "- #{input} -> #{output} (skipped)"
+              else
+                console.log "* #{input} -> #{output}"
+                console.log data.stdout if data.stdout
+                console.log data.stderr if data.stderr
             .catch (error) ->
               console.log "! #{input} -> #{output} FAILED"
               console.log error
@@ -339,7 +371,8 @@ main = (args = process.argv[2..]) ->
     console.log '! Not enough filename arguments'
     help()
   else
-    console.log "> Converted #{files} SVG files into #{files * formats.length} files in #{Math.round((new Date) - start) / 1000} seconds"
+    console.log "> Converted #{files.input} SVG files into #{files.output} files (#{files.output - files.skip} updated) in #{Math.round((new Date) - start) / 1000} seconds"
+    console.log "> Skipped #{files.skip} conversions.  To force conversion, use --force" if files.skip
 
 module.exports = {
   defaultSettings
