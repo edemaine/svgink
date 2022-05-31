@@ -9,10 +9,10 @@ defaultSettings =
   ## Path to inkscape.  Default searches PATH.
   inkscape: 'inkscape'
   ## Maximum number of Inkscapes to run in parallel.
-  ## Default = number of physical CPU cores (assuming hyperthreading) minus 1.
+  ## Default = number of physical CPU cores (assuming hyperthreading).
   jobs:
     try
-      Math.max 1, require('os').cpus().length // 2 - 1
+      Math.max 1, require('os').cpus().length // 2
     catch
       1
   ## If an Inkscape process sits idle for this many milliseconds, close it.
@@ -35,23 +35,31 @@ class InkscapeError extends Error
     @name = 'InkscapeError'
 
 class Inkscape
-  constructor: (@settings = defaultSettings) ->
+  constructor: (@settings = defaultSettings, @initialUnref) ->
+    ## `initialUnref` specifies whether to unref the Inkscape process
+    ## before it even initializes; use for secondary Inkscape processes.
   open: ->
     ## Returns a Promise.
     new Promise (@resolve, @reject) =>
       @stdout = @stderr = ''
-      @dead = @ready = false
+      @dead = @ready = @started = false
+      #console.log (new Date), 'start'
       @process = child_process.spawn @settings.inkscape, ['--shell']
       ## Node can close independent of pipes; rely on @process.ref/unref
       for handle in [@process.stdin, @process.stdout, @process.stderr]
         handle.unref()
+      ## Don't wait for a new Inkscape to start, unless requested.
+      @process.unref() if @initialUnref
       @process.stderr.on 'data', (buf) =>
         @stderr += buf
       @process.stdout.on 'data', (buf) =>
         @stdout += buf
         if @stdout == '> ' or @stdout.endsWith '\n> '
-          @ready = true
-          @process.unref()
+          #console.log (new Date), 'ready' unless @started
+          ## Inkscape just started up, or finished a job.  Allow Node to exit.
+          ## In the first case, don't call unref() a second time.
+          @process.unref() if @started or not @initialUnref
+          @ready = @started = true
           if @settings.idle?
             @timeout = setTimeout (=> @close()), @settings.idle
             @timeout.unref()
@@ -134,6 +142,7 @@ class SVGProcessor
   constructor: (@settings = defaultSettings) ->
     @inkscapes = []
     @queue = []
+    @spawning = false
   convert: (input, output) ->
     ## Convert input filename to output filename.  Returns a Promise.
     new Promise (resolve, reject) =>
@@ -159,15 +168,21 @@ class SVGProcessor
           return unless @queue.length or @closing
         else if @closing
           inkscape.close()
-    ## If we still have jobs, start more Inkscape processes to run them.
-    while @queue.length and @inkscapes.length < @settings.jobs
-      job = @queue.shift()
-      @inkscapes.push inkscape = new Inkscape @settings
+    ## If we still have jobs, start another Inkscape process to run them.
+    ## On Windows, spawning is slow and spawning multiple Inkscapes at once
+    ## slows down all spawns (including the first), so only spawn one at a time.
+    ## On Linux, spawning is fast, so this isn't a big penalty.
+    ## This also avoids spawning many Inkscapes if everything can be finished
+    ## quickly with the first spawned Inkscape.
+    if not @spawning and @queue.length and @inkscapes.length < @settings.jobs
+      @spawning = true
+      @inkscapes.push inkscape = new Inkscape @settings, @inkscapes.length
       inkscape.open()
       .then =>
-        @run inkscape, job
+        @spawning = false
+        @update()
       .catch (error) =>
-        job.reject error
+        throw new InkscapeError "Failed to spawn Inkscape: #{error.message}"
   run: (inkscape, job) ->
     inkscape.run job
     .then (data) =>
