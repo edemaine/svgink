@@ -93,10 +93,11 @@ class Inkscape
           stderr = @stderr
           @stdout = @stderr = ''
           @resolve? {...@job, stdout, stderr}
-          @resolve = @reject = @job = null
+          @resolve = @reject = @job = @cmd = null
       @process.on 'error', (error) =>
         @closed()
         if @reject?
+          error[key] = value for key, value of @job if @job?
           @reject error
         else
           throw new InkscapeError "Uncaught Inkscape error: #{error.message}"
@@ -113,8 +114,8 @@ class Inkscape
             else
               "without status or signal before '> ' prompt"
           if @reject?
-            @reject {status, signal, message}
-            @resolve = @reject = null
+            @reject {...@job, status, signal, message}
+            @resolve = @reject = @job = @cmd = null
           else
             throw new InkscapeError "Uncaught Inkscape crash: #{message}"
         else
@@ -287,6 +288,7 @@ class SVGProcessor
       @jobs--
       @update()
     .catch (error) =>
+      error[key] = value for key, value of job
       reject error
   sanitize: (output) ->
     ## Sanitize generated file.  Returns a Promise.
@@ -384,7 +386,7 @@ main = (args = process.argv[2..]) ->
               console.log data.stdout if data.stdout
               console.log data.stderr if data.stderr
           .catch (error) ->
-            console.log "! #{input} -> #{output} FAILED"
+            console.log "! #{error.input} -> #{error.output} FAILED"
             console.log error
   await processor.close()
   if not formats.length
