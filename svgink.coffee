@@ -4,10 +4,16 @@
 metadata = require './package.json'
 child_process = require 'child_process'
 fs = require 'fs/promises'
+path = require 'path'
 
 defaultSettings =
   ## Whether to force conversion, even if SVG file is older than target.
   force: false
+  ## Directories to output all or some files.
+  outputDir: null  ## default: same directory as input
+  outputDirExt:    ## by extension; default is to use outputDir
+    '.pdf': null
+    '.png': null
   ## Path to inkscape.  Default searches PATH.
   inkscape: 'inkscape'
   ## Maximum number of Inkscapes to run in parallel.
@@ -79,13 +85,13 @@ class Inkscape
           .replace /^([^\n]*)(\n|$)/, (match, firstLine) =>
             ## Remove first line of output if it includes the job input,
             ## possibly with some complex readline output after first \r.
-            if @job?.startsWith firstLine.replace /\r[^]*$/, ''
+            if @cmd?.startsWith firstLine.replace /\r[^]*$/, ''
               ''
             else
               match
           stderr = @stderr
           @stdout = @stderr = ''
-          @resolve? {stdout, stderr}
+          @resolve? {...@job, stdout, stderr}
           @resolve = @reject = @job = null
       @process.on 'error', (error) =>
         @closed()
@@ -135,28 +141,30 @@ class Inkscape
     clearTimeout @timeout if @timeout?
   run: (job) ->
     ## Send job to Inkscape.  Returns a Promise.
-    ## Job can be a string to send to the shell, or an object with
-    ## `input` and `output` properties, for conversion.
-    unless @ready
+    ## Job can be a string to send to the shell,
+    ## or an object with a `job` string property,
+    ## or an object with `input` and `output` properties for conversion.
+    unless @ready and not @job
       throw new InkscapeError 'Attempt to run Inkscape job before ready'
     @ready = false
     @process.ref()
     clearTimeout @timeout if @timeout?
-    job = job.job if job?.job?
-    if typeof job == 'string'
-      @job = job.replace /\n+$/, ''
+    job = {job} if typeof job == 'string'
+    @job = job
+    if job?.job?
+      @cmd = job.job.replace /\n+$/, ''
     else if job?.input? and job.output?
-      @job = [
-        "file-open:#{job.input}"
+      @cmd = [
+        "file-open:#{@job.input}"
         "export-filename:#{job.output}"
         'export-overwrite'
         'export-do'
       ].join ';'
     else
-      throw new InkscapeError "Invalid Inkscape job: #{job}"
-    @job += '\n'
+      throw new InkscapeError "Invalid Inkscape job: #{@job}"
+    @cmd += '\n'
     new Promise (@resolve, @reject) =>
-      @process.stdin.write @job
+      @process.stdin.write @cmd
 
 class SVGProcessor
   constructor: (@settings = defaultSettings) ->
@@ -164,6 +172,26 @@ class SVGProcessor
     @queue = []
     @spawning = false
     @jobs = 0
+  convertTo: (input, format) ->
+    ## Convert input filename to output file format (e.g. 'pdf' or 'png').
+    ## This generates an output filename using `settings.outputDir*`
+    ## and then calls `convert`.  The returned promise has an additional
+    ## `output` property with the generated filename.
+    format = ".#{format}" unless format.startsWith '.'
+    parsed = path.parse input
+    delete parsed.base  # use ext instead
+    if parsed.ext != format
+      parsed.ext = format
+    else
+      parsed.ext += format
+    if @settings.outputDirExt[format]?
+      parsed.dir = @settings.outputDirExt[format]
+    else if @settings.outputDir?
+      parsed.dir = @settings.outputDir
+    output = path.format parsed
+    promise = @convert input, output
+    promise.output = output
+    promise
   convert: (input, output) ->
     ## Convert input filename to output filename, and then sanitize,
     ## unless output is newer than input or forced.  Returns a Promise.
@@ -179,21 +207,22 @@ class SVGProcessor
           outputStat = await fs.stat output
           inputStat = await fs.stat input
       unless inputStat? and outputStat? and inputStat.mtime < outputStat.mtime
-        @queue.push {input, output, resolve, reject}
+        @queue.push {job: {input, output}, resolve, reject}
         @update()
       else
         @jobs--
-        resolve {skip: true}
+        resolve {input, output, skip: true}
         @update() if @closing  # resolve close() in case last job is skipped
       undefined
   run: (job) ->
     ## Queue job for Inkscape to run.  Returns a Promise.
-    ## Job can be a string to send to the shell, or an object with
-    ## `input` and `output` properties, for conversion (without sanitization).
+    ## Job can be a string to send to the shell,
+    ## or an object with a `job` string property,
+    ## or an object with `input` and `output` properties for conversion.
     @jobs++
     job = {job} if typeof job == 'string'
     new Promise (resolve, reject) =>
-      @queue.push {...job, resolve, reject}
+      @queue.push {job, resolve, reject}
   close: ->
     ## Close all Inkscape processes once all pending jobs are complete.
     ## Returns a promise.
@@ -238,18 +267,18 @@ class SVGProcessor
             ' (check PATH environment variable?)'
           else ''
     undefined
-  runNow: (inkscape, job) ->
+  runNow: (inkscape, {job, resolve, reject}) ->
     inkscape.run job
     .then (data) =>
       @update()
       await @sanitize job.output if job.output?
       data
     .then (data) =>
-      job.resolve data
+      resolve data
       @jobs--
       @update()
     .catch (error) =>
-      job.reject error
+      reject error
   sanitize: (output) ->
     ## Sanitize generated file.  Returns a Promise.
     return unless @settings.sanitize
@@ -289,12 +318,9 @@ Optional arguments:
 
 main = (args = process.argv[2..]) ->
   start = new Date
-  path = require 'path'
   settings = {...defaultSettings}
   processor = new SVGProcessor settings
   formats = []
-  outputDir = null
-  outputDirExt = {}
   files =
     input: 0
     output: 0
@@ -314,13 +340,13 @@ main = (args = process.argv[2..]) ->
         settings.inkscape = args[i+1]
       when '-o', '--output'
         skip = 1
-        outputDir = args[i+1]
+        settings.outputDir = args[i+1]
       when '--op', '--output-pdf'
         skip = 1
-        outputDirExt.pdf = args[i+1]
+        settings.outputDirExt['.pdf'] = args[i+1]
       when '--oP', '--output-png'
         skip = 1
-        outputDirExt.png = args[i+1]
+        settings.outputDirExt['.png'] = args[i+1]
       when '-p', '--pdf'
         formats.push 'pdf'
       when '-P', '--png'
@@ -339,30 +365,18 @@ main = (args = process.argv[2..]) ->
         input = arg
         for format in formats
           files.output++
-          output = path.parse input
-          delete output.base
-          if output.ext != ".#{format}"
-            output.ext = ".#{format}"
-          else
-            output.ext += ".#{format}"
-          if outputDirExt[format]?
-            output.dir = outputDirExt[format]
-          else if outputDir?
-            output.dir = outputDir
-          output = path.format output
-          do (input, output) ->
-            processor.convert input, output
-            .then (data) ->
-              if data.skip
-                files.skip++
-                console.log "- #{input} -> #{output} (skipped)"
-              else
-                console.log "* #{input} -> #{output}"
-                console.log data.stdout if data.stdout
-                console.log data.stderr if data.stderr
-            .catch (error) ->
-              console.log "! #{input} -> #{output} FAILED"
-              console.log error
+          processor.convertTo input, format
+          .then (data) ->
+            if data.skip
+              files.skip++
+              console.log "- #{data.input} -> #{data.output} (skipped)"
+            else
+              console.log "* #{data.input} -> #{data.output}"
+              console.log data.stdout if data.stdout
+              console.log data.stderr if data.stderr
+          .catch (error) ->
+            console.log "! #{input} -> #{output} FAILED"
+            console.log error
   await processor.close()
   if not formats.length
     console.log '! Not enough formats'

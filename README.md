@@ -138,22 +138,36 @@ main(['-p', '-j', '4', '-o', 'pdf', 'input1.svg', 'input2.svg'])
 The API provides two classes:
 
 1. `SVGProcessor` handles spawning one or more Inkscape processes.
-   * `convert(input, output)` queues converting one filename to another,
-     following by sanitizing the output.  The input file should be SVG.
-     The output format is determined from the file extension.
-     It returns a promise which resolves to a `{stdout, stderr, skip}` object
-     when the conversion and sanitization are complete.
+   * `convertTo(input, format)` queues converting one filename to the
+     specified format, followed by sanitizing the output.
+     The `input` file should be SVG.
+     The output `format` should be `"pdf"`, `".pdf"`, `"png"`, `".png"`,
+     or another format/extension supported by Inkscape;
+     It returns a promise which resolves to a
+     `{skip, stdout, stderr, input, output}`
+     object when the conversion and sanitization are complete.
      Here either `skip` is `true` meaning that conversion was skipped because
      the input was older than the output and `settings.force` was false, or
      `stdout` and `stderr` give the string contents from Inkscape's stdout
      and stderr for this job, which you should print to display warnings
      and/or errors.
+     In addition, `input` is the original input filename,
+     and `output` is the generated output filename with `format` extension.
+     The promise also has an `output` property with the output filename
+     in case it's needed earlier.
+   * `convert(input, output)` queues converting one filename to another,
+     followed by sanitizing the output.  The input file should be SVG.
+     The output format is determined from the file extension.
+     It returns a promise which resolves to a
+     `{stdout, stderr, skip, input, output}` object
+     when the conversion and sanitization are complete.
    * `run(job)` queues a given job.  A job can be a string to send to
-     Inkscape directly, or an object of the form
-     `{input: 'input.svg', output: `output.pdf'}`,
+     Inkscape directly, an object with a `job` string property,
+     or an object of the form `{input: 'input.svg', output: `output.pdf'}`,
      but scheduling a conversion in this way will skip sanitization
      and force conversion (skip modification time checking).
-     Returns a promise which resolves to a `{stdout, stderr}` object
+     Returns a promise which resolves to a `{stdout, stderr}` object,
+     along with the `job` or `input`/`output` properties from the given job,
      when the job is complete.
    * `sanitize(output)` optionally sanitizes the given output filename.
      You could override this method to support custom sanitization behavior.
@@ -172,7 +186,8 @@ The API provides two classes:
      the Inkscape process before it finishes starting;
      set true for secondary Inkscape processes.
    * `run(job)` sends a given job to the Inkscape process,
-     and returns a promise which resolves to a `{stdout, stderr}` object
+     and returns a promise which resolves to a `{stdout, stderr}` object,
+     along with the `job` or `input`/`output` properties from the given job,
      when Inkscape finishes the job.
      This method can be called only when Inkscape is ready
      (after the promise returned by `open()` or the last call to `run()`
@@ -187,6 +202,11 @@ The constructors for `SVGProcessor` and `Inkscape` take a single optional
 argument, which is a settings object.  It can have the following properties:
 
 * `force`: Whether to force conversion, even if SVG file is older than target.
+* `outputDir`: Default directory to output files via `convertTo`.
+  Default = `null` which means same directory as input.
+* `outputDirExt`: Object mapping from extensions (`.pdf` or `.png`) to
+  directory to such output files via `convertTo`.
+  Defaults = `null` which means to use `outputDir`.
 * `inkscape`: Path to inkscape.  Default searches PATH for `inkscape`.
 * `jobs`: Maximum number of Inkscapes to run in parallel.
   Default = half the number of logical CPUs
