@@ -250,10 +250,8 @@ Filenames should specify SVG files.
 Optional arguments:
   -h / --help           Show this help message and exit.
   -o DIR / --output DIR Write all output files to directory DIR
-  --os DIR / --output-svg DIR   Write all .svg files to directory DIR
   --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
   --oP DIR / --output-png DIR   Write all .png files to directory DIR
-  --ot DIR / --output-tex DIR   Write all .svg_tex files to directory DIR
   -p / --pdf            Convert output SVG files to PDF via Inkscape
   -P / --png            Convert output SVG files to PNG via Inkscape
   --no-sanitize         Don't sanitize PDF output by blanking out /CreationDate
@@ -311,6 +309,10 @@ main = (args = process.argv[2..]) ->
             output.ext = ".#{format}"
           else
             output.ext += ".#{format}"
+          if outputDirExt[format]?
+            output.dir = outputDirExt[format]
+          else if outputDir?
+            output.dir = outputDir
           output = path.format output
           do (input, output) ->
             processor.convert input, output
