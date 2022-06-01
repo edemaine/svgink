@@ -22,6 +22,8 @@ svgink --pdf filename1.svg filename2.svg
 svgink -p filename1.svg filename2.svg
 # Custom output directory:
 svgink --pdf -o pdf filename1.svg filename2.svg
+# Continuously watch for changed files:
+svgink --watch --pdf *.svg
 ```
 
 ## Efficiency
@@ -66,6 +68,19 @@ By default, `svgink` strips this date out, so the generated PDF files
 should be identical (assuming matching Inkscape versions).
 You can turn off this behavior via the `--no-sanitize` command-line option.
 
+## Watching
+
+`svgink` provides a "watch" mechanism to continuously convert files
+whenever they change.  Use this when actively editing SVG files.
+
+```bash
+svgink --watch --pdf *.svg
+```
+
+Use <kbd>Ctrl+C</kbd> to stop watching.
+Note that you need to rerun this command if new SVG files are created,
+as it will only watch the initial set of files matching `*.svg`.
+
 ## Installation
 
 After [installing Node](https://nodejs.org/en/download/),
@@ -87,6 +102,7 @@ Usage: svgink (...options and filenames...)
 Filenames should specify SVG files.
 Optional arguments:
   -h / --help           Show this help message and exit.
+  -w / --watch          Continuously watch for changed files and convert them
   -f / --force          Force conversion even if output newer than SVG input
   -o DIR / --output DIR Write all output files to directory DIR
   --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
@@ -172,6 +188,13 @@ The API provides two classes:
    * `sanitize(output)` optionally sanitizes the given output filename.
      You could override this method to support custom sanitization behavior.
      It normally returns a promise.
+   * `watch(inputs, formats)` continuously watches for changes to the
+     filename(s) in `inputs`, and when they change (and settle from changing),
+     converts the file to all format(s) in `formats` (like `convertTo`).
+     It asynchronously generates the outputs from `convertTo`, i.e.,
+     `{skip, stdout, stderr, input, ouput}` objects.
+   * `wait()` returns a promise which resolves when all jobs are complete.
+     Only one `wait()` or `close()` should be active at once.
    * `close()` shuts down Inkscape processes once all conversion jobs
      added so far are done.  (Do not add jobs after calling `close()`.)
      It returns a promise which resolves when all jobs are complete
@@ -212,11 +235,13 @@ argument, which is a settings object.  It can have the following properties:
   Default = half the number of logical CPUs
   (= number of physical CPU cores assuming hyperthreading).
 * `idle`: If an Inkscape process sits idle for this many milliseconds,
-  close it.  Default = `null` which means infinity.
+  close it.  Default = 1 minute.  Set to `null` to disable.
 * `startTimeout`: If an Inkscape fails to start shell for this many
   milliseconds, fail.  Default = 5 seconds.  Set to `null` to disable.
 * `quitTimeout`: If an Inkscape fails to close for this many milliseconds,
   kill it.  Default = 1 second.  Set to `null` to disable.
+* `settle`: Wait for an input file to stop changing for this many milliseconds
+  before watch mode triggers conversion.  Default = 1 second.
 * `sanitize`: Whether to sanitize PDF output by blanking out /CreationDate.
   Default = `true`.
 * `bufferSize`: Buffer size for sanitization.  Default = 16KB.

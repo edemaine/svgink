@@ -4,7 +4,7 @@
 metadata = require './package.json'
 child_process = require 'child_process'
 fs = require 'fs/promises'
-fsSync = require 'fs'
+fsNormal = require 'fs'
 path = require 'path'
 
 defaultSettings =
@@ -33,6 +33,9 @@ defaultSettings =
   ## If an Inkscape fails to close for this many milliseconds, kill it.
   ## Default = 1 second.  Set to null to disable.
   quitTimeout: 1000
+  ## Wait for an input file to stop changing for this many milliseconds
+  ## before watch triggers conversion.  Default = 1 second.
+  settle: 1000
   ## Whether to sanitize PDF output by blanking out /CreationDate.
   sanitize: true
   ## Buffer size for sanitization.
@@ -198,7 +201,7 @@ class SVGProcessor
       ## Try to make output directory, synchronously to avoid multiple
       ## async threads trying to make the same directory at once.
       try
-        fsSync.mkdirSync dir, recursive: true
+        fsNormal.mkdirSync dir, recursive: true
       catch error
         console.log "! Failed to make directory '#{dir}': #{error.message}"
       parsed.dir = dir
@@ -213,8 +216,10 @@ class SVGProcessor
     new Promise (resolve, reject) =>
       for filename in [input, output]
         if invalidFilename filename
-          jobs--
-          return reject new InkscapeError "Inkscape shell does not support filenames with semicolons or leading/trailing spaces: #{filename}"
+          @jobs--
+          reject new InkscapeError "Inkscape shell does not support filenames with semicolons or leading/trailing spaces: #{filename}"
+          @update() if @waiting  # resolve wait() in case last job is skipped
+          return
       ## Compare input and output modification times, unless forced.
       unless @settings.force
         try
@@ -226,7 +231,7 @@ class SVGProcessor
       else
         @jobs--
         resolve {input, output, skip: true}
-        @update() if @closing  # resolve close() in case last job is skipped
+        @update() if @waiting  # resolve wait() in case last job is skipped
       undefined
   run: (job) ->
     ## Queue job for Inkscape to run.  Returns a Promise.
@@ -237,22 +242,27 @@ class SVGProcessor
     job = {job} if typeof job == 'string'
     new Promise (resolve, reject) =>
       @queue.push {job, resolve, reject}
+  wait: ->
+    ## Returns a Promise that resolves once all pending jobs are complete.
+    ## Only one wait() can be active at a time.
+    new Promise (@waiting) => @update()
   close: ->
     ## Close all Inkscape processes once all pending jobs are complete.
-    ## Returns a promise.
-    new Promise (@closing) =>
-      @update()
+    ## Returns a Promise.
+    @closing = true
+    @wait()
   update: ->
     ## Potentially push jobs from queue or closing to Inkscape processes.
-    return unless @queue.length or @closing
+    return unless @queue.length or @waiting or @closing
     ## Filter out any Inkscape processes that died, e.g. from idle timeout.
     @inkscapes = (inkscape for inkscape in @inkscapes when not inkscape.dead)
-    ## Check for completed closing.
-    if @closing and @jobs <= 0
-      #and not @queue.length and
-      #@inkscapes.every (inkscape) -> not inkscape.job?
+    ## Check for completed waiting.
+    if @waiting and @jobs <= 0
       ## Schedule close() promise to resolve after job promise resolves.
-      setTimeout (=> @closing()), 0
+      setTimeout =>
+        @waiting()
+        @waiting = null
+      , 0
       return
     ## Give jobs to any ready Inkscape processes.
     for inkscape in @inkscapes
@@ -311,6 +321,51 @@ class SVGProcessor
         if match?
           await file.write ' '.repeat(match[0].length), position + match.index
         await file.close()
+  watch: (inputs, formats) ->
+    inputs = [inputs] if typeof inputs == 'string'
+    formats = [formats] if typeof formats == 'string'
+    resolve = null
+    queue = []
+    watchers = {}
+    timeouts = {}
+    status = {}
+    watch = (input) =>
+      watchers[input] = fsNormal.watch input,
+        (eventType) => handle input, eventType
+    handle = (input) =>
+      clearTimeout timeouts[input] if timeouts[input]?
+      if status[input] == 'converting'
+        status[input] = 'changed'
+      else if not status[input]
+        ## Restart watcher in case inode changed.
+        watchers[input].close()
+        watch input
+        ## Wait for file to settle.
+        timeouts[input] = setTimeout =>
+          ## If timeout actually resolves, file has settled.
+          status[input] = 'converting'
+          for format in formats
+            @convertTo input, format
+            .then (data) =>
+              ## If file changed during conversion, schedule another conversion.
+              current = status[input]
+              delete status[input]
+              if current == 'changed'
+                handle input
+              ## Output conversion result
+              queue.push data
+              resolve?()
+              resolve = null
+        , @settings.settle
+    for input in inputs
+      continue if watchers[input]?
+      watch input
+    ## Yield queue items as they become available.
+    loop
+      await new Promise (r) => resolve = r
+      resolve = null
+      while queue.length
+        yield queue.shift()
 
 help = ->
   console.log """
@@ -321,6 +376,7 @@ Documentation: https://github.com/edemaine/svgink
 Filenames should specify SVG files.
 Optional arguments:
   -h / --help           Show this help message and exit.
+  -w / --watch          Continuously watch for changed files and convert them
   -f / --force          Force conversion even if output newer than SVG input
   -o DIR / --output DIR Write all output files to directory DIR
   --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
@@ -335,7 +391,9 @@ main = (args = process.argv[2..]) ->
   start = new Date
   settings = {...defaultSettings}
   processor = new SVGProcessor settings
+  watch = false
   formats = []
+  inputs = []
   files =
     input: 0
     output: 0
@@ -348,6 +406,8 @@ main = (args = process.argv[2..]) ->
     switch arg
       when '-h', '--help'
         help()
+      when '-w', '--watch'
+        watch = true
       when '-f', '--force'
         settings.force = true
       when '-i', '--inkscape'
@@ -377,7 +437,7 @@ main = (args = process.argv[2..]) ->
           console.warn "Invalid argument to --jobs: #{args[i+1]}"
       else
         files.input++
-        input = arg
+        inputs.push input = arg
         for format in formats
           files.output++
           processor.convertTo input, format
@@ -392,7 +452,10 @@ main = (args = process.argv[2..]) ->
           .catch (error) ->
             console.log "! #{error.input} -> #{error.output} FAILED"
             console.log error
-  await processor.close()
+  if watch
+    await processor.wait()
+  else
+    await processor.close()
   if not formats.length
     console.log '! Not enough formats'
     help()
@@ -402,6 +465,12 @@ main = (args = process.argv[2..]) ->
   else
     console.log "> Converted #{files.input} SVG files into #{files.output} files (#{files.output - files.skip} updated) in #{Math.round((new Date) - start) / 1000} seconds"
     console.log "> Skipped #{files.skip} conversions.  To force conversion, use --force" if files.skip
+    if watch
+      console.log '> Watching for changes... (Ctrl-C to exit)'
+      for await data from processor.watch inputs, formats
+        console.log "* #{data.input} -> #{data.output}"
+        console.log data.stdout if data.stdout
+        console.log data.stderr if data.stderr
 
 module.exports = {
   defaultSettings
