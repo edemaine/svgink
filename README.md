@@ -97,9 +97,10 @@ This should install an `svgink` command-line tool on your path.
 Run `svgink` to see the supported command-line options:
 
 ```
-Usage: svgink (...options and filenames...)
+Usage: svgink (...options and filenames/directories/globs...)
 
-Filenames should specify SVG files.
+Filenames or glob patterns should specify SVG files.
+Directories implicitly refer to *.svg within the directory.
 Optional arguments:
   -h / --help           Show this help message and exit.
   -w / --watch          Continuously watch for changed files and convert them
@@ -130,6 +131,8 @@ npm install svgink
 
 Then you can `require('svgink')` or `import ... from 'svgink'`.
 
+### Examples
+
 Here is a simple example of converting two files:
 
 ```js
@@ -143,24 +146,50 @@ await processor.close();
 console.log('finished all conversions');
 ```
 
-Alternatively, you can access the command-line interface like so:
+Here is a more advanced example of converting a blob specification:
 
 ```js
 import {SVGProcessor} from 'svgink';
-main(['-p', '-j', '4', '-o', 'pdf', 'input1.svg', 'input2.svg'])
+const processor = new SVGProcessor();
+process.on('converted', (job) =>
+  console.log(`converted ${job.input} to ${job.output}`)
+);
+processor.convertGlob('*.svg', ['pdf', 'png']);
+await processor.close();
+console.log('finished all conversions');
+```
+
+Alternatively, you can access the command-line interface
+(including all printed messages) like so:
+
+```js
+import {SVGProcessor} from 'svgink';
+main(['-p', '-j', '4', '-o', 'pdf', '*.svg'])
 .then(() => console.log('finished all conversions'));
 ```
+
+### Classes
 
 The API provides two classes:
 
 1. `SVGProcessor` handles spawning one or more Inkscape processes.
-   * `convertTo(input, format)` queues converting one filename to the
-     specified format, followed by sanitizing the output.
+   * `convertGlob(input, formats)` queues conversion job(s) where `input`
+     can be a filename, a directory name (which means "process all `.svg`
+     files in that directory"), or a glob resolving to SVG files.
+     Globs are resolved via [node-glob](https://github.com/isaacs/node-glob)
+     which supports [notation](https://github.com/isaacs/node-glob#glob-primer)
+     such as `{this,that}`, `*drawing*.svg`, `figs/**/*.svg`, etc.
+     The output `formats` should be `"pdf"`, `".pdf"`, `"png"`, `".png"`,
+     another format/extension supported by Inkscape, or an array thereof.
+     To be notified of conversions and/or errors, you should listen to the
+     corresponding events.
+   * `convertTo(input, formats)` queues converting one filename to the
+     specified format(s), followed by sanitizing the output.
      The `input` file should be SVG.
-     The output `format` should be `"pdf"`, `".pdf"`, `"png"`, `".png"`,
-     or another format/extension supported by Inkscape;
-     It returns a promise which resolves to a
-     `{skip, stdout, stderr, input, output}`
+     The output `formats` should be `"pdf"`, `".pdf"`, `"png"`, `".png"`,
+     another format/extension supported by Inkscape, or an array thereof.
+     It returns a promise, or an array of promises if `formats` is an array,
+     where each promise resolves to a `{skip, stdout, stderr, input, output}`
      object when the conversion and sanitization are complete.
      Here either `skip` is `true` meaning that conversion was skipped because
      the input was older than the output and `settings.force` was false, or
@@ -220,6 +249,8 @@ The API provides two classes:
    * `close()` attempts to gently close the Inkscape process
      via the `quit` command.  If this times out,
      it kills the process via a signal.
+
+### Settings
 
 The constructors for `SVGProcessor` and `Inkscape` take a single optional
 argument, which is a settings object.  It can have the following properties:

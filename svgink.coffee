@@ -3,8 +3,10 @@
 #log = require 'why-is-node-running'
 metadata = require './package.json'
 child_process = require 'child_process'
+EventEmitter = require 'events'
 fs = require 'fs/promises'
 fsNormal = require 'fs'
+os = require 'os'
 path = require 'path'
 
 defaultSettings =
@@ -21,7 +23,7 @@ defaultSettings =
   ## Default = number of physical CPU cores (assuming hyperthreading).
   jobs:
     try
-      Math.max 1, require('os').cpus().length // 2
+      Math.max 1, os.cpus().length // 2
     catch
       1
   ## If an Inkscape process sits idle for this many milliseconds, close it.
@@ -175,17 +177,57 @@ class Inkscape
     new Promise (@resolve, @reject) =>
       @process.stdin.write @cmd
 
-class SVGProcessor
+class SVGProcessor extends EventEmitter
   constructor: (@settings = defaultSettings) ->
+    super()
     @inkscapes = []
     @queue = []
     @spawning = false
     @jobs = 0
-  convertTo: (input, format) ->
-    ## Convert input filename to output file format (e.g. 'pdf' or 'png').
-    ## This generates an output filename using `settings.outputDir*`
-    ## and then calls `convert`.  The returned promise has an additional
-    ## `output` property with the generated filename.
+  convertGlob: (input, formats) ->
+    ## Convert directory or glob pattern into specified format(s).
+    ## Use input/converted/error events to consume results.
+    @jobs++  # treat glob as an additional job, to avoid premature exit
+    try
+      stat = await fs.stat input
+    if stat?.isFile()
+      @jobs--  # will be immediately incremented by convert job
+      return @convertTo input, formats
+    {Glob} = require 'glob'
+    if stat?.isDirectory()  # directory treated as /*.svg glob
+      ## glob requires forward slashes for directory separators.
+      if os.platform() == 'win32'
+        input = input.replace /\\/g, '/'
+      ## Escape all glob syntax, as this is a real path.
+      input = input.replace /[\*\+\?\!\|\@\(\)\[\]\{\}]/g, '\\$&'
+      input += '/*.svg'
+    else  # path doesn't exist, so treat as glob
+      ## Support backslash in Windows path as long as not meaningful escape.
+      if os.platform() == 'win32'
+        input = input.replace /\\($|[^\*\+\?\!\|\@\(\)\[\]\{\}])/g, '\\$&'
+    ## Inherit existing Glob caches and options, or else set options.
+    glob = @glob = new Glob input, @glob ? nodir: true
+    glob.on 'match', (file) =>
+      @convertTo file, formats
+    glob.on 'error', (error) =>
+      @emit 'error', error
+    glob.on 'end', (matches) =>
+      unless matches.length
+        console.log "! No files found matching '#{input}'"
+      @jobs--  # finished glob job
+      @update() if @waiting  # resolve wait() in case this was last job
+    glob
+  convertTo: (input, format, emit = true) ->
+    ## Convert input filename to output file format(s), e.g.:
+    ## 'pdf', 'png', '.pdf', '.png', or ['pdf', 'png'].
+    ## Generates output filename(s) using `settings.outputDir*`
+    ## and then calls `convert`.
+    ## Returns a Promise or Array of Promises (when `format` is an Array).
+    ## Each Promise has additional `output` property with generated filename.
+    @emit 'input', input if emit
+    if Array.isArray format
+      return (@convertTo input, f, false for f in format)
+    ## Single format case.  Generate output filename.
     format = ".#{format}" unless format.startsWith '.'
     parsed = path.parse input
     delete parsed.base  # use ext instead
@@ -206,6 +248,7 @@ class SVGProcessor
         console.log "! Failed to make directory '#{dir}': #{error.message}"
       parsed.dir = dir
     output = path.format parsed
+    ## Call convert.
     promise = @convert input, output
     promise.output = output
     promise
@@ -218,7 +261,7 @@ class SVGProcessor
         if invalidFilename filename
           @jobs--
           reject new InkscapeError "Inkscape shell does not support filenames with semicolons or leading/trailing spaces: #{filename}"
-          @update() if @waiting  # resolve wait() in case last job is skipped
+          @update() if @waiting  # resolve wait() in case this was last job
           return
       ## Compare input and output modification times, unless forced.
       unless @settings.force
@@ -233,6 +276,11 @@ class SVGProcessor
         resolve {input, output, skip: true}
         @update() if @waiting  # resolve wait() in case last job is skipped
       undefined
+    .then (result) =>
+      @emit 'converted', result
+      result
+    .catch (error) =>
+      @emit 'error', error  # throws if no error listeners
   run: (job) ->
     ## Queue job for Inkscape to run.  Returns a Promise.
     ## Job can be a string to send to the shell,
@@ -242,6 +290,12 @@ class SVGProcessor
     job = {job} if typeof job == 'string'
     new Promise (resolve, reject) =>
       @queue.push {job, resolve, reject}
+      @update()
+    .then (result) =>
+      @emit 'ran', result
+      result
+    .catch (error) =>
+      @emit 'error', error  # throws if no error listeners
   wait: ->
     ## Returns a Promise that resolves once all pending jobs are complete.
     ## Only one wait() can be active at a time.
@@ -370,10 +424,11 @@ class SVGProcessor
 help = ->
   console.log """
 svgink #{metadata.version}
-Usage: #{process.argv[1]} (...options and filenames...)
+Usage: #{process.argv[1]} (...options and filenames/directories/globs...)
 Documentation: https://github.com/edemaine/svgink
 
-Filenames should specify SVG files.
+Filenames or glob patterns should specify SVG files.
+Directories implicitly refer to *.svg within the directory.
 Optional arguments:
   -h / --help           Show this help message and exit.
   -w / --watch          Continuously watch for changed files and convert them
@@ -390,14 +445,30 @@ Optional arguments:
 main = (args = process.argv[2..]) ->
   start = new Date
   settings = {...defaultSettings}
-  processor = new SVGProcessor settings
-  watch = false
-  formats = []
-  inputs = []
   files =
     input: 0
     output: 0
     skip: 0
+  processor = new SVGProcessor settings
+  .on 'input', => files.input++
+  .on 'converted', (data) =>
+    files.output++
+    if data.skip
+      files.skip++
+      console.log "- #{data.input} -> #{data.output} (skipped)"
+    else
+      console.log "* #{data.input} -> #{data.output}"
+      console.log data.stdout if data.stdout
+      console.log data.stderr if data.stderr
+  .on 'error', (error) =>
+    if error.input?
+      console.log "! #{error.input} -> #{error.output} FAILED"
+    else
+      console.log "! Unknown error"
+    console.log error
+  watch = false
+  formats = []
+  inputs = []
   skip = 0
   for arg, i in args
     if skip
@@ -436,22 +507,8 @@ main = (args = process.argv[2..]) ->
         else
           console.warn "Invalid argument to --jobs: #{args[i+1]}"
       else
-        files.input++
         inputs.push input = arg
-        for format in formats
-          files.output++
-          processor.convertTo input, format
-          .then (data) ->
-            if data.skip
-              files.skip++
-              console.log "- #{data.input} -> #{data.output} (skipped)"
-            else
-              console.log "* #{data.input} -> #{data.output}"
-              console.log data.stdout if data.stdout
-              console.log data.stderr if data.stderr
-          .catch (error) ->
-            console.log "! #{error.input} -> #{error.output} FAILED"
-            console.log error
+        processor.convertGlob input, formats
   if watch
     await processor.wait()
   else
