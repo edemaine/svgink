@@ -95,7 +95,7 @@ Globs are resolved via [node-glob](https://github.com/isaacs/node-glob)
 which supports [notation](https://github.com/isaacs/node-glob#glob-primer)
 such as `{this,that}`, `*drawing*.svg`, `figs/**/*.svg`, etc.
 To detect when globs might match new files, `svgink` watches all prefix
-directories of matched files.  This will fail to detect new matching files in
+directories of matched files.  This may fail to detect new matching files in
 a directory that previously had no matching files; in this case, `touch` any
 matching directory to trigger rechecking, or restart `svgink`.
 

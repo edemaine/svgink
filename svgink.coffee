@@ -440,7 +440,7 @@ class SVGProcessor extends EventEmitter
             ## Watch a directory for new/newly named files,
             ## which triggers re-evaluating glob to see if new files to watch.
             watchers[dir] ?= fsNormal.watch dir, (eventType) =>
-              find true if eventType == 'rename'
+              find true #if eventType == 'rename'
           find = (convert) =>
             ## Evaluate glob, watch all matching files for changes,
             ## and watch all prefix directories for new files as well,
