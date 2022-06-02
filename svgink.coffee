@@ -479,6 +479,7 @@ Optional arguments:
   -o DIR / --output DIR Write all output files to directory DIR
   --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
   --oP DIR / --output-png DIR   Write all .png files to directory DIR
+  -i PATH / --inkscape PATH     Specify PATH to Inkscape binary
   -p / --pdf            Convert output SVG files to PDF via Inkscape
   -P / --png            Convert output SVG files to PNG via Inkscape
   --no-sanitize         Don't sanitize PDF output by blanking out /CreationDate
