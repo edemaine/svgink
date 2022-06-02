@@ -30,8 +30,8 @@ defaultSettings =
   ## Default = 1 minute.  Set to null to disable.
   idle: 60000
   ## If an Inkscape fails to start shell for this many milliseconds, fail.
-  ## Default = 5 seconds.  Set to null to disable.
-  startTimeout: 5000
+  ## Default = 1 minute.  Set to null to disable.
+  startTimeout: 60000
   ## If an Inkscape fails to close for this many milliseconds, kill it.
   ## Default = 1 second.  Set to null to disable.
   quitTimeout: 1000

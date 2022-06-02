@@ -279,7 +279,7 @@ argument, which is a settings object.  It can have the following properties:
 * `idle`: If an Inkscape process sits idle for this many milliseconds,
   close it.  Default = 1 minute.  Set to `null` to disable.
 * `startTimeout`: If an Inkscape fails to start shell for this many
-  milliseconds, fail.  Default = 5 seconds.  Set to `null` to disable.
+  milliseconds, fail.  Default = 1 minute.  Set to `null` to disable.
 * `quitTimeout`: If an Inkscape fails to close for this many milliseconds,
   kill it.  Default = 1 second.  Set to `null` to disable.
 * `settle`: Wait for an input file to stop changing for this many milliseconds
