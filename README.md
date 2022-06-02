@@ -53,9 +53,10 @@ physical cores as 2&nbsp;*n* logical cores).
 You can override the number of Inkscape processes to use via `-j 4` or similar.
 Note that the processes are started in sequence rather than in parallel,
 so you may not get full job parallelism unless you have enough jobs.
-(On Windows, starting many Inkscape processes in parallel slows them all down;
+(Why in sequence?
+On Windows, starting many Inkscape processes in parallel slows them all down;
 and on Linux, starting Inkscape processes is fast enough to not be a big deal.
-This also prevents `svgink` from starting more Inkscape processes than
+This behavior also prevents `svgink` from starting more Inkscape processes than
 necessary, in case all jobs complete faster than the startup process.)
 
 ## Sanitization
