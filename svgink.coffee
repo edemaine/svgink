@@ -188,35 +188,45 @@ class SVGProcessor extends EventEmitter
     ## Convert directory or glob pattern into specified format(s).
     ## Use input/converted/error events to consume results.
     @jobs++  # treat glob as an additional job, to avoid premature exit
-    try
-      stat = await fs.stat input
-    if stat?.isFile()
+    {type, input} = await @parseGlob input
+    if type == 'file'
       @jobs--  # will be immediately incremented by convert job
       return @convertTo input, formats
-    {Glob} = require 'glob'
-    if stat?.isDirectory()  # directory treated as /*.svg glob
-      ## glob requires forward slashes for directory separators.
-      if os.platform() == 'win32'
-        input = input.replace /\\/g, '/'
-      ## Escape all glob syntax, as this is a real path.
-      input = input.replace /[\*\+\?\!\|\@\(\)\[\]\{\}]/g, '\\$&'
-      input += '/*.svg'
-    else  # path doesn't exist, so treat as glob
-      ## Support backslash in Windows path as long as not meaningful escape.
-      if os.platform() == 'win32'
-        input = input.replace /\\($|[^\*\+\?\!\|\@\(\)\[\]\{\}])/g, '\\$&'
-    ## Inherit existing Glob caches and options, or else set options.
-    glob = @glob = new Glob input, @glob ? nodir: true
-    glob.on 'match', (file) =>
+    @makeGlob input, nodir: true
+    .on 'match', (file) =>
       @convertTo file, formats
-    glob.on 'error', (error) =>
-      @emit 'error', error
-    glob.on 'end', (matches) =>
+    .on 'end', (matches) =>
       unless matches.length
         console.log "! No files found matching '#{input}'"
       @jobs--  # finished glob job
       @update() if @waiting  # resolve wait() in case this was last job
-    glob
+  escapeGlob: (input) ->
+    input.replace /[\*\+\?\!\|\@\(\)\[\]\{\}]/g, '\\$&'
+  parseGlob: (input) ->
+    try
+      stat = await fs.stat input
+    if stat?.isFile()
+      type = 'file'
+    else
+      if stat?.isDirectory()  # directory treated as /*.svg glob
+        type = 'dir'
+        ## glob requires forward slashes for directory separators.
+        if os.platform() == 'win32'
+          input = input.replace /\\/g, '/'
+        ## Escape all glob syntax, as this is a real path.
+        input = @escapeGlob input
+        input += '/*.svg'
+      else  # path doesn't exist, so treat as glob
+        type = 'glob'
+        ## Support backslash in Windows path as long as not meaningful escape.
+        if os.platform() == 'win32'
+          input = input.replace /\\($|[^\*\+\?\!\|\@\(\)\[\]\{\}])/g, '\\$&'
+    {type, input}
+  makeGlob: (input, options = {}) ->
+    {Glob} = require 'glob'
+    new Glob input, options
+    .on 'error', (error) =>
+      @emit 'error', error
   convertTo: (input, format, emit = true) ->
     ## Convert input filename to output file format(s), e.g.:
     ## 'pdf', 'png', '.pdf', '.png', or ['pdf', 'png'].
@@ -377,49 +387,65 @@ class SVGProcessor extends EventEmitter
         await file.close()
   watch: (inputs, formats) ->
     inputs = [inputs] if typeof inputs == 'string'
-    formats = [formats] if typeof formats == 'string'
-    resolve = null
-    queue = []
+    formats = formats[0] if formats.length == 1
+    array = Array.isArray formats
     watchers = {}
     timeouts = {}
     status = {}
-    watch = (input) =>
-      watchers[input] = fsNormal.watch input,
-        (eventType) => handle input, eventType
-    handle = (input) =>
+    handle = (input, force) =>
       clearTimeout timeouts[input] if timeouts[input]?
       if status[input] == 'converting'
         status[input] = 'changed'
       else if not status[input]
         ## Restart watcher in case inode changed.
-        watchers[input].close()
-        watch input
+        if watchers[input]?
+          watchers[input].close()
+          delete watchers[input]
+          watchFile input
         ## Wait for file to settle.
         timeouts[input] = setTimeout =>
           ## If timeout actually resolves, file has settled.
           status[input] = 'converting'
-          for format in formats
-            @convertTo input, format
-            .then (data) =>
-              ## If file changed during conversion, schedule another conversion.
-              current = status[input]
-              delete status[input]
-              if current == 'changed'
-                handle input
-              ## Output conversion result
-              queue.push data
-              resolve?()
-              resolve = null
+          if force?
+            oldSettings = @settings
+            @settings = {...oldSettings, force}
+          (if array
+            Promise.allSettled @convertTo input, formats
+          else
+            @convertTo input, formats
+          ).finally =>
+            @settings = oldSettings if force?
+            ## If file changed during conversion, schedule forced conversion.
+            current = status[input]
+            delete status[input]
+            if current == 'changed'
+              handle input, true
         , @settings.settle
+    watchFile = (input) =>
+      watchers[input] ?= fsNormal.watch input, => handle input
     for input in inputs
-      continue if watchers[input]?
-      watch input
-    ## Yield queue items as they become available.
-    loop
-      await new Promise (r) => resolve = r
-      resolve = null
-      while queue.length
-        yield queue.shift()
+      {type, input} = await @parseGlob input
+      if type == 'file'
+        watchFile input
+      else
+        do (input) =>
+          watchDir = (dir) =>
+            ## Watch a directory for new/newly named files,
+            ## which triggers re-evaluating glob to see if new files to watch.
+            watchers[dir] ?= fsNormal.watch dir, (eventType) =>
+              find() if eventType == 'rename'
+          find = =>
+            ## Evaluate glob, watch all matching files for changes,
+            ## and watch all prefix directories for new files as well,
+            ## as they might affect the glob.
+            @makeGlob input, nodir: true
+            .on 'match', (file) =>
+              watchFile file
+              for slash from file.matchAll '/'
+                watchDir file[..slash.index]
+              watchDir '.' unless file.startsWith '/'
+          find()
+    undefined
 
 help = ->
   console.log """
@@ -524,10 +550,7 @@ main = (args = process.argv[2..]) ->
     console.log "> Skipped #{files.skip} conversions.  To force conversion, use --force" if files.skip
     if watch
       console.log '> Watching for changes... (Ctrl-C to exit)'
-      for await data from processor.watch inputs, formats
-        console.log "* #{data.input} -> #{data.output}"
-        console.log data.stdout if data.stdout
-        console.log data.stderr if data.stderr
+      processor.watch inputs, formats
 
 module.exports = {
   defaultSettings

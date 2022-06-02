@@ -59,7 +59,7 @@ and on Linux, starting Inkscape processes is fast enough to not be a big deal.
 This behavior also prevents `svgink` from starting more Inkscape processes than
 necessary, in case all jobs complete faster than the startup process.)
 
-## Sanitization
+## Output Sanitization
 
 `svgink` also tries to make version control easier with compiled PDF outputs
 (which are useful to check in to avoid requiring Inkscape to build).
@@ -69,22 +69,39 @@ By default, `svgink` strips this date out, so the generated PDF files
 should be identical (assuming matching Inkscape versions).
 You can turn off this behavior via the `--no-sanitize` command-line option.
 
-## Watching
+## Watch: Automatic Conversion of Changed SVG Files
 
 `svgink` provides a "watch" mechanism to continuously convert files
 whenever they change.  Use this when actively editing SVG files.
 
 ```bash
-svgink --watch --pdf *.svg
+# Watch matching files
+svgink --watch --pdf 'fig*.svg'
+# Watch *.svg in all descendant directories
+svgink --watch --pdf '**/*.svg'
+# Watch a directory, which implicitly watches *.svg in that directory
+svgink --watch --pdf figs
 ```
 
 Use <kbd>Ctrl+C</kbd> to stop watching.
-Note that you need to rerun this command if new SVG files are created,
-as it will only watch the initial set of files matching `*.svg`.
+
+In the first two examples, the quotes prevent the shell from expanding
+glob patterns (here, `*` and `**`) to the current list of matching files.
+Without quotes, `svgink` will just detect changes to the
+initial list of matching files.
+Adding quotes allows `svgink` to also detect a new matching file,
+e.g., a newly created `fignew.svg`.
+Globs are resolved via [node-glob](https://github.com/isaacs/node-glob)
+which supports [notation](https://github.com/isaacs/node-glob#glob-primer)
+such as `{this,that}`, `*drawing*.svg`, `figs/**/*.svg`, etc.
+To detect when globs might match new files, `svgink` watches all prefix
+directories of matched files.  This will fail to detect new matching files in
+a directory that previously had no matching files; in this case, `touch` any
+matching directory to trigger rechecking, or restart `svgink`.
 
 ## Installation
 
-After [installing Node](https://nodejs.org/en/download/),
+After [installing Node](https://nodejs.org/en/download/) (v12+),
 you can install this tool via
 
 ```bash
@@ -169,7 +186,7 @@ main(['-p', '-j', '4', '-o', 'pdf', '*.svg'])
 .then(() => console.log('finished all conversions'));
 ```
 
-### `SVGProcessor` class
+### `SVGProcessor` Class
 
 The main interface to the API is via the `SVGProcessor` class,
 which handles spawning one or more Inkscape processes
@@ -225,8 +242,9 @@ The resulting instance provides the following methods:
 * `watch(inputs, formats)` continuously watches for changes to the
   filename(s) in `inputs`, and when they change (and settle from changing),
   converts the file to all format(s) in `formats` (like `convertTo`).
-  It asynchronously generates the outputs from `convertTo`, i.e.,
-  `{skip, stdout, stderr, input, ouput}` objects.
+  Each input in `inputs` can be a glob or directory name, as in `convertGlob`.
+  To be notified of conversions and/or errors, you should listen to the
+  corresponding [events](#events).
 * `wait()` returns a promise which resolves when all jobs are complete.
   Only one `wait()` or `close()` should be active at once.
 * `close()` shuts down Inkscape processes once all conversion jobs
@@ -234,7 +252,7 @@ The resulting instance provides the following methods:
   It returns a promise which resolves when all jobs are complete
   (though Inkscape processes may still be shutting down).
 
-### `Inkscape` class
+### `Inkscape` Class
 
 You can also access the shell interface of a single Inkscape process
 via the lower-level `Inkscape` class.
