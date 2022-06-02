@@ -424,12 +424,14 @@ class SVGProcessor extends EventEmitter
     watchFile = (input) =>
       try
         watchers[input] ?= fsNormal.watch input, => handle input
+        .on 'error', (error) => @emit 'error', error
       catch error
         if error.code == 'ENOENT'
           console.log ". #{input} no longer exists"
+          ## Cancel conversion job about to be started
           setImmediate => clearTimeout timeouts[input] if timeouts[input]?
         else
-          throw error
+          @emit 'error', error
     for input in inputs
       {type, input} = await @parseGlob input
       if type == 'file'
@@ -441,6 +443,12 @@ class SVGProcessor extends EventEmitter
             ## which triggers re-evaluating glob to see if new files to watch.
             watchers[dir] ?= fsNormal.watch dir, (eventType) =>
               find true #if eventType == 'rename'
+            .on 'error', (error) =>
+              if error.code in ['ENOENT', 'EPERM']
+                console.log ". #{dir} no longer exists"
+                delete watchers[dir]
+              else
+                @emit 'error', error
           find = (convert) =>
             ## Evaluate glob, watch all matching files for changes,
             ## and watch all prefix directories for new files as well,
