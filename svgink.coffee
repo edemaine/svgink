@@ -422,7 +422,14 @@ class SVGProcessor extends EventEmitter
               handle input, true
         , @settings.settle
     watchFile = (input) =>
-      watchers[input] ?= fsNormal.watch input, => handle input
+      try
+        watchers[input] ?= fsNormal.watch input, => handle input
+      catch error
+        if error.code == 'ENOENT'
+          console.log ". #{input} no longer exists"
+          setImmediate => clearTimeout timeouts[input] if timeouts[input]?
+        else
+          throw error
     for input in inputs
       {type, input} = await @parseGlob input
       if type == 'file'
