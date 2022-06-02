@@ -49,7 +49,7 @@ which is what might happen most naturally with conversions driven by `make`.
 Third, `svgink` runs multiple Inkscape processes to exploit multicore CPUs.
 By default, it runs half as many Inkscape processes as there are logical cores
 on your machine (to account for typical hyperthreading which presents *n*
-physical cores as 2&nbsp;*n* logical cores).
+physical cores as 2&thinsp;*n* logical cores).
 You can override the number of Inkscape processes to use via `-j 4` or similar.
 Note that the processes are started in sequence rather than in parallel,
 so you may not get full job parallelism unless you have enough jobs.
@@ -101,7 +101,8 @@ matching directory to trigger rechecking, or restart `svgink`.
 
 ## Installation
 
-After [installing Node](https://nodejs.org/en/download/) (v12+),
+After [installing Node](https://nodejs.org/en/download/) (v12+)
+and [installing Inkscape](https://inkscape.org/release/) (v1+),
 you can install this tool via
 
 ```bash
@@ -365,7 +366,7 @@ pose an issue for you.
   For example:
   * PS, EPS, EMF, WMF, XAML conversion
   * export-dpi for PNG conversion
-  * export-area-drawing instad of default export-area-page
+  * export-area-drawing instead of default export-area-page
 * The Inkscape
   [shell protocol](https://wiki.inkscape.org/wiki/Using_the_Command_Line#Shell_mode)
   doesn't support filenames containing `;` or starting or ending with spaces.
