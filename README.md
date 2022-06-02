@@ -372,3 +372,27 @@ pose an issue for you.
   doesn't support filenames containing `;` or starting or ending with spaces.
   It would be possible to work around this, especially without custom output
   directories, using the command line directly.
+
+## Related Work
+
+There are several other packages and tools for interfacing with Inkscape
+and/or converting SVG files.
+
+* [svg2pdf](https://github.com/Savjee/svg2pdf) converts a directory of SVGs
+  to a directory of PDFs, one Inkscape per job, and using threads instead of
+  async.  `svgink`'s detection of default number of CPUs is based on svg2pdf's.
+* [svink](https://github.com/darosh/node-svink) converts SVGs to PNGs,
+  with support for lots of options corresponding to Inkscape's CLI,
+  one Inkscape per job, and using threads (instead of async)
+  only with multiple export IDs.  `svgink`'s name is inspired by svink's.
+* [inkscape-export](https://github.com/toptensoftware/inkscape-export)
+  converts SVG files to PNG at one or more scales (without parallelism),
+  with additional support for multi-frame animations.
+* [node-inkscape](https://github.com/papandreou/node-inkscape)
+  provides a stream interface to an Inkscape process.
+* [inkscape-cli](https://github.com/Kauhentus/inkscape-cli)
+  provides an JavaScript interface to Inkscape's CLI.
+* [svgexport](https://github.com/shakiba/svgexport) renders SVG to PNG/JPEG
+  using Puppeteer.
+* [svg2](https://github.com/oslllo/svg2) renders SVG to PNG using
+  [resvg-js](https://github.com/yisibl/resvg-js).
