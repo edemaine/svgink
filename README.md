@@ -122,13 +122,14 @@ Filenames or glob patterns should specify SVG files.
 Directories implicitly refer to *.svg within the directory.
 Optional arguments:
   -h / --help           Show this help message and exit.
+  -p / --pdf            Convert SVG files to PDF via Inkscape
+  -P / --png            Convert SVG files to PNG via Inkscape
   -w / --watch          Continuously watch for changed files and convert them
   -f / --force          Force conversion even if output newer than SVG input
   -o DIR / --output DIR Write all output files to directory DIR
   --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
   --oP DIR / --output-png DIR   Write all .png files to directory DIR
-  -p / --pdf            Convert output SVG files to PDF via Inkscape
-  -P / --png            Convert output SVG files to PNG via Inkscape
+  -i PATH / --inkscape PATH     Specify PATH to Inkscape binary
   --no-sanitize         Don't sanitize PDF output by blanking out /CreationDate
   -j N / --jobs N       Run up to N Inkscape jobs in parallel
 ```
