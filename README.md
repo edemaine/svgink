@@ -1,5 +1,55 @@
 # svgink: Efficiently convert SVG files to PDF or PNG via Inkscape
 
+## Table of Contents
+* [Overview](#overview)
+* [Usage](#usage)
+  * [Efficiency](#efficiency)
+  * [Output Sanitization](#output-sanitization)
+  * [Watch: Automatic Conversion of Changed SVG Files](#watch-automatic-conversion-of-changed-svg-files)
+* [Installation](#installation)
+* [Command-Line Interface](#command-line-interface)
+* [API](#api)
+  * [Examples](#examples)
+  * [`SVGProcessor` Class](#svgprocessor-class)
+  * [`Inkscape` Class](#inkscape-class)
+  * [Settings](#settings)
+  * [Events](#events)
+* [Limitations](#limitations)
+* [Related Work](#related-work)
+
+## Overview
+
+How many times have you clicked File menu / Save a Copy /
+Save as type / Portable Document Format (*.pdf) / Save / OK / Replace
+(in Inkscape, or similar sequences in other drawing programs),
+after every edit you make to an SVG drawing?
+
+`svgink` makes it easy to convert to PDF any changed SVG files:
+
+```bash
+svgink --pdf *.svg
+# Shorthand:
+svgink -p *.svg
+```
+
+For longer figure drawing sessions, you can keep `svgink` running
+and watching for any changes to SVG files, automatically converting
+any that you change:
+
+```bash
+# Watch for changed and new SVG files and autoconvert to PDF.
+# (Quotes are necessary to enable detection of new SVG files.)
+svgink --watch --pdf '*.svg'
+# Watch for changed and new SVG files in any recursive subdirectory
+svgink --watch --pdf '**/*.svg'
+# Shorthand:
+svgink -w -p '*.svg'
+svgink -w -p '**/*.svg'
+# Press Ctrl+C to abort a running svgink.
+```
+
+## Usage
+
 [Inkscape](https://inkscape.org/)
 can convert an SVG file into PDF or PNG using its
 [command-line interface](https://wiki.inkscape.org/wiki/Using_the_Command_Line#Export_files)
@@ -13,20 +63,30 @@ inkscape --export-type=pdf filename1.svg filename2.svg
 ```
 
 The `svgink` command-line tool provides a simpler command-line tool to
-do the same thing:
+do the same thing, in particular evading your having to remember the exact
+`--export` option format.
 
 ```bash
-# Basic use:
+# Basic use, PDF mode:
 svgink --pdf filename1.svg filename2.svg
-# Short-hand:
+# Basic use, PNG mode:
+svgink --png filename1.svg filename2.svg
+# Convert to both PDF and PNG:
+svgink --pdf --png filename1.svg filename2.svg
+# Shorthands for above three commands:
 svgink -p filename1.svg filename2.svg
-# Custom output directory:
-svgink --pdf -o pdf filename1.svg filename2.svg
-# Continuously watch for changed files:
-svgink --watch --pdf *.svg
+svgink -P filename1.svg filename2.svg
+svgink -p -P filename1.svg filename2.svg
+# Custom output directories:
+svgink -p -o pdf filename1.svg filename2.svg
+svgink -p -P --op pdf --oP png filename1.svg filename2.svg
+# Force conversion even if SVG files haven't changed:
+svgink -p -f filename1.svg filename2.svg
+# Continuously watch for pattern of new or changed SVG files:
+svgink --watch --pdf '**/*.svg'
 ```
 
-## Efficiency
+### Efficiency
 
 A major advantage of `svgink` is that it quickly converts many SVG files.
 
@@ -59,17 +119,17 @@ and on Linux, starting Inkscape processes is fast enough to not be a big deal.
 This behavior also prevents `svgink` from starting more Inkscape processes than
 necessary, in case all jobs complete faster than the startup process.)
 
-## Output Sanitization
+### Output Sanitization
 
 `svgink` also tries to make version control easier with compiled PDF outputs
 (which are useful to check in to avoid requiring Inkscape to build).
 Normally, Inkscape includes a `/CreationDate` field in the generated PDF,
 so each time you build the PDF files, the files change.
 By default, `svgink` strips this date out, so the generated PDF files
-should be identical (assuming matching Inkscape versions).
+should be identical across multiple runs (assuming matching Inkscape versions).
 You can turn off this behavior via the `--no-sanitize` command-line option.
 
-## Watch: Automatic Conversion of Changed SVG Files
+### Watch: Automatic Conversion of Changed SVG Files
 
 `svgink` provides a "watch" mechanism to continuously convert files
 whenever they change.  Use this when actively editing SVG files.
