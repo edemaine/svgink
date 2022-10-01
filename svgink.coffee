@@ -236,6 +236,7 @@ class SVGProcessor extends EventEmitter
     ## Each Promise has additional `output` property with generated filename.
     @emit 'input', input if emit
     if Array.isArray format
+      @update() unless format.length  # job immediately finished if no formats
       return (@convertTo input, f, false for f in format)
     ## Single format case.  Generate output filename.
     format = ".#{format}" unless format.startsWith '.'
