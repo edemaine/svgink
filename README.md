@@ -151,9 +151,15 @@ Without quotes, `svgink` will just detect changes to the
 initial list of matching files.
 Adding quotes allows `svgink` to also detect a new matching file,
 e.g., a newly created `fignew.svg`.
+
 Globs are resolved via [node-glob](https://github.com/isaacs/node-glob)
 which supports [notation](https://github.com/isaacs/node-glob#glob-primer)
 such as `{this,that}`, `*drawing*.svg`, `figs/**/*.svg`, etc.
+On Windows, the preferred path separator for globs is forward slashes (`/`);
+you can also use backward slashes (`\`), except when they would serve to escape
+glob patterns.  For example, `figs\*` will be treated as the literal filename
+`figs*`, while `figs/*` will be treated as "all files in directory `figs`".
+
 To detect when globs might match new files, `svgink` watches all prefix
 directories of matched files.  This may fail to detect new matching files in
 a directory that previously had no matching files; in this case, `touch` any

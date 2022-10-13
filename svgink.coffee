@@ -220,7 +220,7 @@ class SVGProcessor extends EventEmitter
         type = 'glob'
         ## Support backslash in Windows path as long as not meaningful escape.
         if os.platform() == 'win32'
-          input = input.replace /\\($|[^\*\+\?\!\|\@\(\)\[\]\{\}])/g, '\\$&'
+          input = input.replace /\\($|[^\*\+\?\!\|\@\(\)\[\]\{\}])/g, '/$1'
     {type, input}
   makeGlob: (input, options = {}) ->
     {Glob} = require 'glob'
