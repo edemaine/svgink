@@ -298,7 +298,7 @@ The resulting instance provides the following methods:
   when the conversion and sanitization are complete.
 * `run(job)` queues a given job.  A job can be a string to send to
   Inkscape directly, an object with a `job` string property,
-  or an object of the form `{input: 'input.svg', output: `output.pdf'}`,
+  or an object of the form `{input: 'input.svg', output: 'output.pdf'}`,
   but scheduling a conversion in this way will skip sanitization
   and force conversion (skip modification time checking).
   Returns a promise which resolves to a `{stdout, stderr}` object,
