@@ -12,6 +12,10 @@ path = require 'path'
 defaultSettings =
   ## Whether to force conversion, even if SVG file is older than target.
   force: false
+  ## Whether to run jobs with relative paths, or resolve to absolute paths.
+  ## Absolute paths support changing directories between jobs, but relative
+  ## paths are shorter and might bypass some limitations.
+  relative: false
   ## Directories to output all or some files.
   outputDir: null  ## default: same directory as input
   outputDirExt:    ## by extension; default is to use outputDir
@@ -166,11 +170,12 @@ class Inkscape
       @cmd = job.job.replace /\n+$/, ''
     else if job?.input? and job.output?
       @cmd = [
-        "file-open:#{@job.input}"
-        "export-filename:#{job.output}"
+        "file-open:#{@job.inputAbs ? @job.input}"
+        "export-filename:#{job.outputAbs ? @job.output}"
         'export-overwrite'
         'export-do'
       ].join ';'
+      #console.log @cmd
     else
       throw new InkscapeError "Invalid Inkscape job: #{@job}"
     @cmd += '\n'
@@ -266,9 +271,12 @@ class SVGProcessor extends EventEmitter
   convert: (input, output) ->
     ## Convert input filename to output filename, and then sanitize,
     ## unless output is newer than input or forced.  Returns a Promise.
+    unless @settings.relative
+      inputAbs = path.resolve input
+      outputAbs = path.resolve output
     @jobs++
     new Promise (resolve, reject) =>
-      for filename in [input, output]
+      for filename in [inputAbs ? input, outputAbs ? output]
         if invalidFilename filename
           @jobs--
           reject new InkscapeError "Inkscape shell does not support filenames with semicolons or leading/trailing spaces: #{filename}"
@@ -280,11 +288,11 @@ class SVGProcessor extends EventEmitter
           outputStat = await fs.stat output
           inputStat = await fs.stat input
       unless inputStat? and outputStat? and inputStat.mtime < outputStat.mtime
-        @queue.push {job: {input, output}, resolve, reject}
+        @queue.push {job: {input, output, inputAbs, outputAbs}, resolve, reject}
         @update()
       else
         @jobs--
-        resolve {input, output, skip: true}
+        resolve {input, output, inputAbs, outputAbs, skip: true}
         @update() if @waiting  # resolve wait() in case last job is skipped
       undefined
     .then (result) =>
@@ -360,7 +368,7 @@ class SVGProcessor extends EventEmitter
     inkscape.run job
     .then (data) =>
       @update()
-      await @sanitize job.output if job.output?
+      await @sanitize job.outputAbs ? job.output if job.output?
       data
     .then (data) =>
       resolve data
@@ -484,6 +492,7 @@ Optional arguments:
   --oP DIR / --output-png DIR   Write all .png files to directory DIR
   -i PATH / --inkscape PATH     Specify PATH to Inkscape binary
   --no-sanitize         Don't sanitize PDF output by blanking out /CreationDate
+  --relative            Run jobs with relative paths (default uses absolute)
   -j N / --jobs N       Run up to N Inkscape jobs in parallel
 """
 
@@ -544,6 +553,8 @@ main = (args = process.argv[2..]) ->
         formats.push 'png'
       when '--no-sanitize'
         settings.sanitize = false
+      when '--relative'
+        settings.relative = true
       when '-j', '--jobs'
         skip = 1
         arg = parseInt args[i+1]

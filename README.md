@@ -197,6 +197,7 @@ Optional arguments:
   --oP DIR / --output-png DIR   Write all .png files to directory DIR
   -i PATH / --inkscape PATH     Specify PATH to Inkscape binary
   --no-sanitize         Don't sanitize PDF output by blanking out /CreationDate
+  --relative            Run jobs with relative paths (default uses absolute)
   -j N / --jobs N       Run up to N Inkscape jobs in parallel
 ```
 
@@ -279,7 +280,8 @@ The resulting instance provides the following methods:
   The output `formats` should be `"pdf"`, `".pdf"`, `"png"`, `".png"`,
   another format/extension supported by Inkscape, or an array thereof.
   It returns a promise, or an array of promises if `formats` is an array,
-  where each promise resolves to a `{skip, stdout, stderr, input, output}`
+  where each promise resolves to a
+  `{skip, stdout, stderr, input, output, inputAbs, outputAbs}`
   object when the conversion and sanitization are complete.
   Here either `skip` is `true` meaning that conversion was skipped because
   the input was older than the output and `settings.force` was false, or
@@ -287,18 +289,24 @@ The resulting instance provides the following methods:
   and stderr for this job, which you should print to display warnings
   and/or errors.
   In addition, `input` is the original input filename,
-  and `output` is the generated output filename with `format` extension.
+  `output` is the generated output filename with `format` extension,
+  and `inputAbs` and `outputAbs` are the corresponding absolute paths
+  (unless `settings.relative` is true).
   The promise also has an `output` property with the output filename
   in case it's needed earlier.
 * `convert(input, output)` queues converting one filename to another,
   followed by sanitizing the output.  The input file should be SVG.
   The output format is determined from the file extension.
   It returns a promise which resolves to a
-  `{stdout, stderr, skip, input, output}` object
+  `{stdout, stderr, skip, input, output, inputAbs, outputAbs}` object
   when the conversion and sanitization are complete.
+  The absolute paths `inputAbs` and `outputAbs` are generated automatically,
+  unless `settings.relative` is true.
 * `run(job)` queues a given job.  A job can be a string to send to
   Inkscape directly, an object with a `job` string property,
-  or an object of the form `{input: 'input.svg', output: 'output.pdf'}`,
+  or an object of the form `{input: 'input.svg', output: 'output.pdf',
+  inputAbs: '/full/path/input.svg', outputAbs: '/full/path/output.pdf}`
+  (where `inputAbs` and `outputAbs` are optional),
   but scheduling a conversion in this way will skip sanitization
   and force conversion (skip modification time checking).
   Returns a promise which resolves to a `{stdout, stderr}` object,
@@ -313,6 +321,8 @@ The resulting instance provides the following methods:
   Each input in `inputs` can be a glob or directory name, as in `convertGlob`.
   To be notified of conversions and/or errors, you should listen to the
   corresponding [events](#events).
+  This API does not currently normalize paths to absolute paths, so if you're
+  going to be changing `process.cwd()`, you should normalize yourself.
 * `wait()` returns a promise which resolves when all jobs are complete.
   Only one `wait()` or `close()` should be active at once.
 * `close()` shuts down Inkscape processes once all conversion jobs
@@ -354,6 +364,10 @@ The constructors for `SVGProcessor` and `Inkscape` take a single optional
 argument, which is a settings object.  It can have the following properties:
 
 * `force`: Whether to force conversion, even if SVG file is older than target.
+* `relative`: Whether to run jobs with relative paths, or resolve to
+  absolute paths.  Absolute paths support changing directories between jobs,
+  so this is the default, but relative paths are shorter and might bypass some
+  limitations (such as no `;` in a path name, or Cygwin quirks).
 * `outputDir`: Default directory to output files via `convertTo`.
   Default = `null` which means same directory as input.
 * `outputDirExt`: Object mapping from extensions (`.pdf` or `.png`) to
@@ -403,10 +417,13 @@ supporting the following events:
   which (or how many) filenames matched a glob pattern or directory.
 * `'converted'` indicates that a file has just been successfully converted
   and sanitized into a single format.  The event has one argument,
-  a `{skip, stdout, stderr, input, output}` object as resolved from
-  `convertTo`.  In particular:
+  a `{skip, stdout, stderr, input, output, inputAbs, outputAbs}` object
+  as resolved from `convert` or `convertTo`.  In particular:
   * `input` is the input filename.
   * `output` is the output filename.
+  * `inputAbs` is the input absolute path (unless `settings.relative` is true).
+  * `outputAbs` is the output absolute path
+    (unless `settings.relative` is true).
   * `skip` is a Boolean indicating whether conversion was skipped because
     the input was older than the output and `settings.force` was false
   * `stdout` and `stderr` give the string contents from Inkscape's stdout
