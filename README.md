@@ -388,6 +388,8 @@ argument, which is a settings object.  It can have the following properties:
 * `outputDirExt`: Object mapping from extensions (`.pdf` or `.png`) to
   directory to such output files via `convertTo`.
   Defaults = `null` which means to use `outputDir`.
+* `clean`: Whether to *delete* output files instead of creating them,
+  like `make clean`.
 * `inkscape`: Path to inkscape.  Default searches PATH for `inkscape`.
 * `jobs`: Maximum number of Inkscapes to run in parallel.
   Default = half the number of logical CPUs
