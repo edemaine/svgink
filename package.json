@@ -1,6 +1,6 @@
 {
   "name": "svgink",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Efficiently convert SVG files to PDF and/or PNG via Inkscape",
   "keywords": [
     "svg",
