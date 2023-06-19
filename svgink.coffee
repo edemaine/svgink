@@ -19,6 +19,7 @@ defaultSettings =
   ## Directories to output all or some files.
   outputDir: null  ## default: same directory as input
   outputDirExt:    ## by extension; default is to use outputDir
+    '.jpg': null
     '.pdf': null
     '.png': null
   ## Delete output files instead of creating them, like `make clean`.
@@ -236,7 +237,7 @@ class SVGProcessor extends EventEmitter
       @emit 'error', error
   convertTo: (input, format, emit = true) ->
     ## Convert input filename to output file format(s), e.g.:
-    ## 'pdf', 'png', '.pdf', '.png', or ['pdf', 'png'].
+    ## 'pdf', 'png', 'jpg', '.pdf', '.png', '.jpg', or ['pdf', 'png'].
     ## Generates output filename(s) using `settings.outputDir*`
     ## and then calls `convert`.
     ## Returns a Promise or Array of Promises (when `format` is an Array).
@@ -502,12 +503,14 @@ Optional arguments:
   -h / --help           Show this help message and exit.
   -p / --pdf            Convert SVG files to PDF via Inkscape
   -P / --png            Convert SVG files to PNG via Inkscape
+  -J / --jpg            Convert SVG files to JPG via Inkscape
   -w / --watch          Continuously watch for changed files and convert them
   -f / --force          Force conversion even if output newer than SVG input
   -o DIR / --output DIR Write all output files to directory DIR
   --op DIR / --output-pdf DIR   Write all .pdf files to directory DIR
   --oP DIR / --output-png DIR   Write all .png files to directory DIR
-  --clean               Delete PDF/PNG files that would be generated
+  --oJ DIR / --output-jpg DIR   Write all .jpg files to directory DIR
+  --clean               Delete PDF/PNG/JPG files that would be generated
   -i PATH / --inkscape PATH     Specify PATH to Inkscape binary
   --no-sanitize         Don't sanitize PDF output by blanking out /CreationDate
   --relative            Run jobs with relative paths (default uses absolute)
@@ -572,12 +575,17 @@ main = (args = process.argv[2..]) ->
       when '--oP', '--output-png'
         skip = 1
         settings.outputDirExt['.png'] = args[i+1]
+      when '--oJ', '--output-jpg'
+        skip = 1
+        settings.outputDirExt['.jpg'] = args[i+1]
       when '--clean'
         settings.clean = true
       when '-p', '--pdf'
         formats.push 'pdf'
       when '-P', '--png'
         formats.push 'png'
+      when '-J', '--jpg'
+        formats.push 'jpg'
       when '--no-sanitize'
         settings.sanitize = false
       when '--relative'
@@ -597,7 +605,7 @@ main = (args = process.argv[2..]) ->
   else
     await processor.close()
   unless formats.length
-    console.log '! Not enough formats. Specify --pdf and/or --png.'
+    console.log '! Not enough formats. Specify --pdf, --png, and/or --jpg.'
     help()
   else if not files
     console.log '! Not enough filename arguments'
